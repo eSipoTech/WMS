@@ -1,17 +1,18 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Bell, Info, AlertTriangle, Zap, ArrowRight } from 'lucide-react';
-import { Notification, Language } from '../types';
+import { WMSNotification, Language } from '../types';
 import { MOCK_NOTIFICATIONS } from '../constants';
 
 interface NotificationCenterProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
+  notifications: WMSNotification[];
   onAction?: (action: string) => void;
 }
 
-export const NotificationCenter = ({ isOpen, onClose, language, onAction }: NotificationCenterProps) => {
+export const NotificationCenter = ({ isOpen, onClose, language, notifications, onAction }: NotificationCenterProps) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -43,33 +44,42 @@ export const NotificationCenter = ({ isOpen, onClose, language, onAction }: Noti
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {MOCK_NOTIFICATIONS.map((n) => (
-                <div key={n.id} className={`p-5 rounded-2xl border transition-all ${n.read ? 'bg-white/5 border-white/10' : 'bg-porteo-blue/10 border-porteo-blue/30 ring-1 ring-porteo-blue/20'}`}>
-                  <div className="flex justify-between items-start mb-3">
-                    <div className={`p-2 rounded-lg ${n.type === 'market' ? 'bg-porteo-blue/20 text-porteo-blue' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
-                      {n.type === 'market' ? <Zap className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-                    </div>
-                    <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{n.timestamp}</span>
-                  </div>
-                  <h3 className="text-sm font-bold text-white mb-1">{n.title[language]}</h3>
-                  <p className="text-xs text-white/60 leading-relaxed mb-4">{n.description[language]}</p>
-                  {n.actionLabel && (
-                    <button 
-                      onClick={() => {
-                        if (onAction) {
-                          onAction(n.actionLabel?.en || '');
-                        } else {
-                          alert(language === 'en' ? `Action triggered: ${n.actionLabel?.en}` : `Acción activada: ${n.actionLabel?.es}`);
-                        }
-                      }}
-                      className="w-full py-2 bg-porteo-orange text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-porteo-orange/80 transition-all flex items-center justify-center gap-2"
-                    >
-                      {n.actionLabel[language]}
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  )}
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-white/20 space-y-4">
+                  <Bell className="w-12 h-12" />
+                  <p className="text-sm font-medium">
+                    {language === 'en' ? 'No new notifications' : 'Sin notificaciones nuevas'}
+                  </p>
                 </div>
-              ))}
+              ) : (
+                notifications.map((n) => (
+                  <div key={n.id} className={`p-5 rounded-2xl border transition-all ${n.read ? 'bg-white/5 border-white/10' : 'bg-porteo-blue/10 border-porteo-blue/30 ring-1 ring-porteo-blue/20'}`}>
+                    <div className="flex justify-between items-start mb-3">
+                      <div className={`p-2 rounded-lg ${n.type === 'market' ? 'bg-porteo-blue/20 text-porteo-blue' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
+                        {n.type === 'market' ? <Zap className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                      </div>
+                      <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{n.timestamp}</span>
+                    </div>
+                    <h3 className="text-sm font-bold text-white mb-1">{n.title[language]}</h3>
+                    <p className="text-xs text-white/60 leading-relaxed mb-4">{n.description[language]}</p>
+                    {n.actionLabel && (
+                      <button 
+                        onClick={() => {
+                          if (onAction) {
+                            onAction(n.actionLabel?.en || '');
+                          } else {
+                            alert(language === 'en' ? `Action triggered: ${n.actionLabel?.en}` : `Acción activada: ${n.actionLabel?.es}`);
+                          }
+                        }}
+                        className="w-full py-2 bg-porteo-orange text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-porteo-orange/80 transition-all flex items-center justify-center gap-2"
+                      >
+                        {n.actionLabel[language]}
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="p-6 border-t border-white/10 bg-black/20">

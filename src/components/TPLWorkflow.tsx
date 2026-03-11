@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Truck, MapPin, Clock, CheckCircle2, Circle, AlertCircle, ArrowRight, Package, ClipboardCheck, CornerUpLeft, FileText, Search, Filter, Upload, X, Calendar, Cpu } from 'lucide-react';
+import { Truck, MapPin, Clock, CheckCircle2, Circle, AlertCircle, ArrowRight, Package, ClipboardCheck, CornerUpLeft, FileText, Search, Filter, Upload, X, Calendar, Cpu, ShieldCheck, RefreshCw, Download } from 'lucide-react';
 import { TPLProcess, Language } from '../types';
 import { MOCK_TPL_PROCESSES } from '../constants';
 
@@ -13,10 +13,57 @@ interface TPLWorkflowProps {
 }
 
 export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdateStatus, onViewDocuments, onBulkImport }: TPLWorkflowProps) => {
+  const workflowSteps = [
+    { id: 'collection', icon: <Truck className="w-4 h-4" />, label: { en: 'Collection', es: 'Recolección' } },
+    { id: 'in-transit-to-wh', icon: <MapPin className="w-4 h-4" />, label: { en: 'Arrival', es: 'Llegada' } },
+    { id: 'unloading', icon: <ArrowRight className="w-4 h-4" />, label: { en: 'Unloading', es: 'Descarga' } },
+    { id: 'classifying', icon: <Package className="w-4 h-4" />, label: { en: 'Classification', es: 'Clasificación' } },
+    { id: 'storage', icon: <ClipboardCheck className="w-4 h-4" />, label: { en: 'Storage', es: 'Almacén' } },
+    { id: 'picking', icon: <Package className="w-4 h-4" />, label: { en: 'Picking', es: 'Surtido' } },
+    { id: 'cross-dock', icon: <RefreshCw className="w-4 h-4" />, label: { en: 'Cross-Dock', es: 'Cruce Andén' } },
+    { id: 'loading', icon: <Truck className="w-4 h-4" />, label: { en: 'Loading', es: 'Carga' } },
+    { id: 'delivery', icon: <MapPin className="w-4 h-4" />, label: { en: 'Delivery', es: 'Entrega' } },
+    { id: 'customer-facility', icon: <CheckCircle2 className="w-4 h-4" />, label: { en: 'Customer Status', es: 'Estatus Cliente' } },
+    { id: 'returning', icon: <CornerUpLeft className="w-4 h-4" />, label: { en: 'Return', es: 'Retorno' } },
+    { id: 'documentation', icon: <FileText className="w-4 h-4" />, label: { en: 'Documentation', es: 'Documentación' } },
+  ];
+
   const [selectedProcess, setSelectedProcess] = useState<TPLProcess | null>(shipments[0] || null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCustomer, setFilterCustomer] = useState<string>('all');
+  const [filterTruckType, setFilterTruckType] = useState<string>('all');
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showCartaPortePreview, setShowCartaPortePreview] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const currentStepIdx = useMemo(() => {
+    if (!selectedProcess) return -1;
+    return workflowSteps.findIndex(s => s.id === selectedProcess.status);
+  }, [selectedProcess]);
+
+  const completeCurrentStep = () => {
+    if (!selectedProcess || currentStepIdx === -1 || currentStepIdx >= workflowSteps.length - 1) return;
+    
+    const nextStep = workflowSteps[currentStepIdx + 1];
+    const updatedProcess: TPLProcess = {
+      ...selectedProcess,
+      status: nextStep.id as TPLProcess['status'],
+      steps: [
+        ...selectedProcess.steps.map(s => s.status === 'in-progress' ? { ...s, status: 'completed' as const, timestamp: new Date().toLocaleTimeString() } : s),
+        {
+          id: `s-${Date.now()}`,
+          label: nextStep.label,
+          status: 'in-progress',
+          timestamp: new Date().toLocaleTimeString(),
+          details: language === 'en' ? `System automatically moved to ${nextStep.label.en}` : `El sistema se movió automáticamente a ${nextStep.label.es}`
+        }
+      ]
+    };
+    
+    setSelectedProcess(updatedProcess);
+    onUpdateStatus?.(updatedProcess);
+  };
 
   // Sync selectedProcess when shipments change
   useEffect(() => {
@@ -38,32 +85,51 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
         p.id.toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesStatus = filterStatus === 'all' || p.status === filterStatus;
+      const matchesCustomer = filterCustomer === 'all' || p.customer === filterCustomer;
+      const matchesTruckType = filterTruckType === 'all' || p.truckType === filterTruckType;
       
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus && matchesCustomer && matchesTruckType;
     });
-  }, [shipments, searchQuery, filterStatus]);
+  }, [shipments, searchQuery, filterStatus, filterCustomer, filterTruckType]);
+
+  const customers = useMemo(() => Array.from(new Set(shipments.map(s => s.customer))), [shipments]);
+  const truckTypes = useMemo(() => Array.from(new Set(shipments.map(s => s.truckType))), [shipments]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
       case 'in-progress': return <div className="w-5 h-5 rounded-full border-2 border-porteo-orange border-t-transparent animate-spin" />;
       case 'rejected': return <AlertCircle className="w-5 h-5 text-rose-500" />;
+      case 'pending': return <Circle className="w-5 h-5 text-white/10" />;
       default: return <Circle className="w-5 h-5 text-white/20" />;
     }
   };
 
-  const workflowSteps = [
-    { id: 'collection', icon: <Truck />, label: { en: 'Collection', es: 'Recolección' } },
-    { id: 'in-transit-to-wh', icon: <MapPin />, label: { en: 'Arrival', es: 'Llegada' } },
-    { id: 'unloading', icon: <ArrowRight />, label: { en: 'Unloading', es: 'Descarga' } },
-    { id: 'classifying', icon: <Package />, label: { en: 'Classification', es: 'Clasificación' } },
-    { id: 'storage', icon: <ClipboardCheck />, label: { en: 'Storage/Picking', es: 'Almacén/Surtido' } },
-    { id: 'loading', icon: <Truck />, label: { en: 'Loading', es: 'Carga' } },
-    { id: 'delivery', icon: <MapPin />, label: { en: 'Delivery', es: 'Entrega' } },
-    { id: 'customer-facility', icon: <CheckCircle2 />, label: { en: 'Customer Status', es: 'Estatus Cliente' } },
-    { id: 'returning', icon: <CornerUpLeft />, label: { en: 'Return', es: 'Retorno' } },
-    { id: 'documentation', icon: <FileText />, label: { en: 'Documentation', es: 'Documentación' } },
-  ];
+  const jumpToStep = (stepId: string) => {
+    const step = workflowSteps.find(s => s.id === stepId);
+    if (!step || !selectedProcess) return;
+
+    const updatedProcess: TPLProcess = {
+      ...selectedProcess,
+      status: stepId as TPLProcess['status'],
+      steps: [
+        ...selectedProcess.steps.filter(s => {
+          const sIdx = workflowSteps.findIndex(ws => ws.id === s.id);
+          const targetIdx = workflowSteps.findIndex(ws => ws.id === stepId);
+          return sIdx < targetIdx;
+        }).map(s => ({ ...s, status: 'completed' as const })),
+        {
+          id: `s-${Date.now()}`,
+          label: step.label,
+          status: 'in-progress',
+          timestamp: new Date().toLocaleTimeString(),
+          details: language === 'en' ? `Manual jump to ${step.label.en}` : `Salto manual a ${step.label.es}`
+        }
+      ]
+    };
+    onUpdateStatus?.(updatedProcess);
+    setSelectedProcess(updatedProcess);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 h-full">
@@ -95,15 +161,34 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {['all', 'collection', 'in-transit', 'arrived', 'unloading', 'completed'].map((status) => (
+            {['all', 'collection', 'in-transit-to-wh', 'unloading', 'classifying', 'storage', 'picking', 'loading', 'delivery', 'documentation'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilterStatus(status)}
                 className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap transition-all ${filterStatus === status ? 'bg-porteo-orange text-white' : 'bg-white/5 text-white/40 hover:text-white'}`}
               >
-                {status}
+                {status.replace(/-/g, ' ')}
               </button>
             ))}
+          </div>
+
+          <div className="flex gap-2">
+            <select 
+              value={filterCustomer}
+              onChange={(e) => setFilterCustomer(e.target.value)}
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white/60 focus:outline-none focus:border-porteo-orange/50"
+            >
+              <option value="all">{language === 'en' ? 'All Customers' : 'Todos los Clientes'}</option>
+              {customers.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select 
+              value={filterTruckType}
+              onChange={(e) => setFilterTruckType(e.target.value)}
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white/60 focus:outline-none focus:border-porteo-orange/50"
+            >
+              <option value="all">{language === 'en' ? 'All Trucks' : 'Todos los Camiones'}</option>
+              {truckTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -147,51 +232,42 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-white/40 uppercase tracking-widest">{language === 'en' ? 'Current Status' : 'Estatus Actual'}</p>
-                  <p className="text-lg font-bold text-porteo-orange uppercase mt-1">{selectedProcess.status.replace(/-/g, ' ')}</p>
+                  <div className="flex items-center gap-2 justify-end mt-1">
+                    <span className="px-3 py-1 bg-porteo-orange/20 text-porteo-orange rounded-full text-[10px] font-bold uppercase tracking-widest">
+                      {selectedProcess.status.replace(/-/g, ' ')}
+                    </span>
+                    <span className="text-[10px] text-white/40 font-mono">
+                      {language === 'en' ? 'Step' : 'Paso'} {currentStepIdx + 1} / {workflowSteps.length}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               {/* Visual Workflow Tracker */}
-              <div className="relative">
-                <div className="absolute top-1/2 left-0 w-full h-0.5 bg-white/10 -translate-y-1/2 z-0" />
-                <div className="flex justify-between relative z-10">
-                  {workflowSteps.map((step, idx) => {
-                    const currentStepIdx = workflowSteps.findIndex(s => s.id === selectedProcess.status);
-                    const isCompleted = idx < currentStepIdx;
-                    const isCurrent = step.id === selectedProcess.status;
-                    
-                    return (
-                      <div 
-                        key={step.id} 
-                        className="flex flex-col items-center gap-3 cursor-pointer group"
-                        onClick={() => {
-                          const updatedProcess = {
-                            ...selectedProcess,
-                            status: step.id as TPLProcess['status'],
-                            steps: [
-                              ...selectedProcess.steps,
-                              { 
-                                id: `s-${Date.now()}`, 
-                                label: step.label, 
-                                status: 'completed', 
-                                timestamp: new Date().toLocaleTimeString(),
-                                details: language === 'en' ? `Manual status update to ${step.label.en}` : `Actualización manual de estatus a ${step.label.es}`
-                              }
-                            ]
-                          };
-                          onUpdateStatus?.(updatedProcess as TPLProcess);
-                          setSelectedProcess(updatedProcess as TPLProcess);
-                        }}
-                      >
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all group-hover:scale-110 ${isCompleted ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-porteo-orange text-white ring-4 ring-porteo-orange/20' : 'bg-slate-800 text-white/20'}`}>
-                          {step.icon}
+              <div className="relative overflow-x-auto pb-4 scrollbar-hide">
+                <div className="min-w-[800px] relative">
+                  <div className="absolute top-5 left-0 w-full h-0.5 bg-white/10 z-0" />
+                  <div className="flex justify-between relative z-10">
+                    {workflowSteps.map((step, idx) => {
+                      const isCompleted = idx < currentStepIdx;
+                      const isCurrent = step.id === selectedProcess.status;
+                      
+                      return (
+                        <div 
+                          key={step.id} 
+                          className="flex flex-col items-center gap-2 cursor-pointer group px-2"
+                          onClick={() => jumpToStep(step.id)}
+                        >
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all group-hover:scale-110 ${isCompleted ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-porteo-orange text-white ring-4 ring-porteo-orange/20' : 'bg-slate-800 text-white/20'}`}>
+                            {step.icon}
+                          </div>
+                          <p className={`text-[9px] font-bold uppercase tracking-tight text-center w-16 leading-tight ${isCurrent ? 'text-porteo-orange' : 'text-white/40'}`}>
+                            {step.label[language]}
+                          </p>
                         </div>
-                        <p className={`text-[10px] font-bold uppercase tracking-tighter text-center max-w-[60px] ${isCurrent ? 'text-porteo-orange' : 'text-white/40'}`}>
-                          {step.label[language]}
-                        </p>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -200,57 +276,124 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
               <div className="glass p-6 rounded-3xl">
                 <h3 className="text-lg font-bold text-white mb-6">{language === 'en' ? 'Process Log' : 'Bitácora de Proceso'}</h3>
                 <div className="space-y-6">
-                  {selectedProcess.steps.map((step) => (
-                    <button 
-                      key={step.id} 
-                      onClick={() => alert(language === 'en' ? `Step Detail: ${step.label.en}\nStatus: ${step.status}\nTime: ${step.timestamp}\nDetails: ${step.details || 'No additional details'}` : `Detalle del Paso: ${step.label.es}\nEstatus: ${step.status}\nHora: ${step.timestamp}\nDetalles: ${step.details || 'Sin detalles adicionales'}`)}
-                      className="flex gap-4 w-full text-left hover:bg-white/5 p-2 rounded-xl transition-all group"
-                    >
-                      <div className="mt-1">{getStatusIcon(step.status)}</div>
-                      <div>
-                        <p className="text-sm font-bold text-white group-hover:text-porteo-orange transition-colors">{step.label[language]}</p>
-                        <p className="text-xs text-white/40 mt-0.5">{step.timestamp || (step.status === 'pending' ? 'Pending' : 'In Progress')}</p>
-                        {step.details && <p className="text-xs text-white/60 mt-2 p-2 bg-white/5 rounded-lg border border-white/5">{step.details}</p>}
-                      </div>
-                    </button>
-                  ))}
+                  {workflowSteps.map((step, idx) => {
+                    const stepInHistory = selectedProcess.steps.find(s => s.label.en === step.label.en || s.label.es === step.label.es);
+                    const isCurrent = selectedProcess.status === step.id;
+                    const isCompleted = workflowSteps.findIndex(s => s.id === selectedProcess.status) > idx;
+                    const status = isCompleted ? 'completed' : isCurrent ? 'in-progress' : 'pending';
+
+                    return (
+                      <button 
+                        key={step.id} 
+                        onClick={() => jumpToStep(step.id)}
+                        className={`flex gap-4 w-full text-left p-3 rounded-2xl transition-all border ${isCurrent ? 'bg-porteo-orange/10 border-porteo-orange/30' : 'hover:bg-white/5 border-transparent'}`}
+                      >
+                        <div className="mt-1">{getStatusIcon(status)}</div>
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className={`text-sm font-bold ${isCurrent ? 'text-porteo-orange' : isCompleted ? 'text-white' : 'text-white/20'}`}>
+                                {step.label[language]}
+                              </p>
+                              <p className="text-[10px] text-white/40 mt-0.5">
+                                {stepInHistory?.timestamp || (status === 'pending' ? (language === 'en' ? 'Pending' : 'Pendiente') : (language === 'en' ? 'Active' : 'Activo'))}
+                              </p>
+                            </div>
+                            {isCurrent && (
+                              <div className="px-3 py-1 bg-porteo-orange text-white rounded-lg text-[10px] font-bold">
+                                {language === 'en' ? 'Active' : 'Activo'}
+                              </div>
+                            )}
+                          </div>
+                          {stepInHistory?.details && <p className="text-[10px] text-white/60 mt-2 p-2 bg-white/5 rounded-lg border border-white/5">{stepInHistory.details}</p>}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="glass p-6 rounded-3xl">
-                <h3 className="text-lg font-bold text-white mb-6">{language === 'en' ? 'Shipment Details' : 'Detalles del Envío'}</h3>
-                <div className="space-y-4">
-                  <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                    <span className="text-xs text-white/40">{language === 'en' ? 'Vehicle Type' : 'Tipo de Vehículo'}</span>
-                    <span className="text-xs font-bold text-white">{selectedProcess.truckType}</span>
+              <div className="glass p-6 rounded-3xl flex flex-col">
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-white mb-6">{language === 'en' ? 'Shipment Details' : 'Detalles del Envío'}</h3>
+                  <div className="space-y-4">
+                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                      <span className="text-xs text-white/40">{language === 'en' ? 'Vehicle Type' : 'Tipo de Vehículo'}</span>
+                      <span className="text-xs font-bold text-white">{selectedProcess.truckType}</span>
+                    </div>
+                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                      <span className="text-xs text-white/40">{language === 'en' ? 'Appointment' : 'Cita'}</span>
+                      <span className="text-xs font-bold text-white">{selectedProcess.appointmentTime || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                      <span className="text-xs text-white/40">{language === 'en' ? 'Origin' : 'Origen'}</span>
+                      <span className="text-xs font-bold text-white">{selectedProcess.origin}</span>
+                    </div>
+                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                      <span className="text-xs text-white/40">{language === 'en' ? 'Destination' : 'Destino'}</span>
+                      <span className="text-xs font-bold text-white">{selectedProcess.destination}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                    <span className="text-xs text-white/40">{language === 'en' ? 'Appointment' : 'Cita'}</span>
-                    <span className="text-xs font-bold text-white">{selectedProcess.appointmentTime || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                    <span className="text-xs text-white/40">{language === 'en' ? 'Origin' : 'Origen'}</span>
-                    <span className="text-xs font-bold text-white">{selectedProcess.origin}</span>
-                  </div>
-                  <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                    <span className="text-xs text-white/40">{language === 'en' ? 'Destination' : 'Destino'}</span>
-                    <span className="text-xs font-bold text-white">{selectedProcess.destination}</span>
+
+                  <div className="mt-8 flex gap-4">
+                    <button 
+                      onClick={completeCurrentStep}
+                      disabled={currentStepIdx >= workflowSteps.length - 1}
+                      className="flex-1 p-3 bg-porteo-orange text-white rounded-xl text-xs font-bold hover:bg-porteo-orange/80 transition-all disabled:opacity-50"
+                    >
+                      {language === 'en' ? 'Complete Current Step' : 'Completar Paso Actual'}
+                    </button>
+                    <button 
+                      onClick={() => onUpdateStatus?.(selectedProcess)}
+                      className="flex-1 p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+                    >
+                      {language === 'en' ? 'Update Status' : 'Actualizar Estatus'}
+                    </button>
+                    <button 
+                      onClick={() => onViewDocuments?.(selectedProcess)}
+                      className="flex-1 p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+                    >
+                      {language === 'en' ? 'View Documents' : 'Ver Documentos'}
+                    </button>
                   </div>
                 </div>
 
-                <div className="mt-8 grid grid-cols-2 gap-4">
-                  <button 
-                    onClick={() => onUpdateStatus?.(selectedProcess)}
-                    className="p-3 bg-porteo-orange text-white rounded-xl text-xs font-bold hover:bg-porteo-orange/80 transition-all"
-                  >
-                    {language === 'en' ? 'Update Status' : 'Actualizar Estatus'}
-                  </button>
-                  <button 
-                    onClick={() => onViewDocuments?.(selectedProcess)}
-                    className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
-                  >
-                    {language === 'en' ? 'View Documents' : 'Ver Documentos'}
-                  </button>
+                {/* Compliance Section */}
+                <div className="mt-6 pt-6 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-white uppercase tracking-widest">
+                        {language === 'en' ? 'US Compliance' : 'Mexican Compliance'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
+                      {language === 'en' ? 'DOT/FMCSA' : 'CFDI 4.0'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    <button 
+                      onClick={() => {
+                        setIsGenerating(true);
+                        setTimeout(() => {
+                          setIsGenerating(false);
+                          setShowCartaPortePreview(true);
+                        }, 1500);
+                      }}
+                      disabled={isGenerating}
+                      className="w-full p-3 bg-porteo-blue/10 border border-porteo-blue/30 text-porteo-blue rounded-xl text-[10px] font-bold hover:bg-porteo-blue/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isGenerating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                      {language === 'en' ? 'Generate BOL v3.0' : 'Generar Carta Porte v3.0'}
+                    </button>
+                    <button 
+                      onClick={() => alert(language === 'en' ? 'Opening Compliance Audit...' : 'Abriendo Auditoría de Cumplimiento...')}
+                      className="w-full p-3 bg-white/5 border border-white/10 text-white/60 rounded-xl text-[10px] font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                    >
+                      <ShieldCheck className="w-3 h-3" />
+                      {language === 'en' ? 'Compliance Audit' : 'Auditoría de Cumplimiento'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -262,6 +405,127 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
           </div>
         )}
       </div>
+
+      {/* Carta Porte Preview Modal */}
+      <AnimatePresence>
+        {showCartaPortePreview && selectedProcess && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setShowCartaPortePreview(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl bg-white rounded-[32px] p-10 shadow-2xl text-slate-900 font-sans overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-6">
+                <button onClick={() => setShowCartaPortePreview(false)} className="text-slate-400 hover:text-slate-900 transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+                  <div className="flex justify-between items-center mb-10">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-porteo-blue rounded-xl flex items-center justify-center">
+                        <FileText className="text-white w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-slate-900">
+                          {language === 'en' ? 'Bill of Lading v3.0' : 'Complemento Carta Porte v3.0'}
+                        </h3>
+                        <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">
+                          {language === 'en' ? 'Electronic BOL' : 'CFDI de Traslado'} • UUID: 550e8400-e29b-41d4-a716-446655440000
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block mb-2">
+                        {language === 'en' ? 'SUCCESSFULLY SIGNED' : 'TIMBRADO EXITOSO'}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {language === 'en' ? 'Date' : 'Fecha'}: {new Date().toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-10 mb-8">
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                          {language === 'en' ? 'Issuer' : 'Emisor'}
+                        </p>
+                        <p className="text-sm font-bold">PORTEO LOGISTICS S.A. DE C.V.</p>
+                        <p className="text-xs text-slate-500">
+                          {language === 'en' ? 'Tax ID' : 'RFC'}: PLO123456789
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                          {language === 'en' ? 'Origin Location' : 'Ubicación Origen'}
+                        </p>
+                        <p className="text-sm font-bold">{selectedProcess.origin}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                          {language === 'en' ? 'Receiver' : 'Receptor'}
+                        </p>
+                        <p className="text-sm font-bold">{selectedProcess.customer}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                          {language === 'en' ? 'Destination Location' : 'Ubicación Destino'}
+                        </p>
+                        <p className="text-sm font-bold">{selectedProcess.destination}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-6 mb-8">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                      {language === 'en' ? 'Goods Details' : 'Detalle de Mercancías'}
+                    </p>
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[10px] text-slate-400 border-b border-slate-200">
+                          <th className="pb-2">{language === 'en' ? 'Product Code' : 'Clave SAT'}</th>
+                          <th className="pb-2">{language === 'en' ? 'Description' : 'Descripción'}</th>
+                          <th className="pb-2">{language === 'en' ? 'Quantity' : 'Cantidad'}</th>
+                          <th className="pb-2 text-right">{language === 'en' ? 'Weight (kg)' : 'Peso (kg)'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs">
+                        <tr className="border-b border-slate-100">
+                          <td className="py-3 font-mono">25171500</td>
+                          <td className="py-3 font-bold">Autopartes y Accesorios</td>
+                          <td className="py-3">1.00 H87</td>
+                          <td className="py-3 text-right font-bold">1,250.00</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <button className="flex-1 py-4 bg-porteo-blue text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-porteo-blue/20">
+                      <Download className="w-4 h-4" />
+                      {language === 'en' ? 'Download PDF' : 'Descargar PDF'}
+                    </button>
+                    <button className="flex-1 py-4 bg-slate-100 text-slate-900 rounded-2xl font-bold flex items-center justify-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      {language === 'en' ? 'View XML' : 'Ver XML'}
+                    </button>
+                  </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Import Modal */}
       <AnimatePresence>
         {showImportModal && (
@@ -309,11 +573,13 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
                           id: `IMP-${Math.floor(Math.random() * 10000)}`,
                           customer: `Imported Customer ${i + 1}`,
                           truckId: `TRK-${Math.floor(Math.random() * 1000)}`,
-                          truckType: 'Full Truck',
+                          truckType: 'Full Truck' as const,
                           origin: 'Laredo, TX',
                           destination: 'Monterrey, NL',
-                          status: 'collection',
-                          steps: []
+                          status: 'collection' as const,
+                          steps: [
+                            { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'in-progress' as const, timestamp: new Date().toLocaleTimeString() }
+                          ]
                         }));
                         onBulkImport?.(newShipments);
                         setShowImportModal(false);

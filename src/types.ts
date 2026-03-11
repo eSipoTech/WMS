@@ -2,6 +2,7 @@ export interface Warehouse {
   id: string;
   name: string;
   location: string;
+  market: Market;
   capacity: number;
   currentOccupancy: number;
   temperature: number;
@@ -23,6 +24,13 @@ export interface InventoryItem {
   palletId: string;
   customer: string;
   expiryDate?: string;
+  // Automotive specific
+  brand?: string;
+  oemNumber?: string;
+  compatibility?: string[]; // Vehicle models
+  category?: 'Engine' | 'Brakes' | 'Suspension' | 'Electrical' | 'Body' | 'Other';
+  isKit?: boolean;
+  components?: { sku: string; quantity: number }[];
 }
 
 export interface FinancialMetric {
@@ -53,9 +61,10 @@ export interface TPLProcess {
   appointmentTime?: string;
   status: 'collection' | 'in-transit-to-wh' | 'unloading' | 'classifying' | 'storage' | 'picking' | 'cross-dock' | 'loading' | 'delivery' | 'customer-facility' | 'returning' | 'documentation';
   steps: TPLStep[];
+  documents?: string[];
 }
 
-export interface Notification {
+export interface WMSNotification {
   id: string;
   type: 'market' | 'operational' | 'alert';
   title: { en: string; es: string };
@@ -63,6 +72,34 @@ export interface Notification {
   actionLabel?: { en: string; es: string };
   timestamp: string;
   read: boolean;
+}
+
+export interface CartaPorte {
+  id: string;
+  folio: string;
+  rfcEmisor: string;
+  rfcReceptor: string;
+  totalDistancia: number;
+  vehiculo: {
+    placa: string;
+    modelo: string;
+    permisoSCT: string;
+  };
+  mercancias: {
+    claveProdServ: string;
+    descripcion: string;
+    cantidad: number;
+    pesoKg: number;
+  }[];
+  status: 'draft' | 'stamped' | 'cancelled';
+}
+
+export interface PatioSlot {
+  id: string;
+  label: string;
+  status: 'empty' | 'occupied' | 'reserved';
+  truckId?: string;
+  type: 'parking' | 'dock' | 'staging';
 }
 
 export interface Translation {
@@ -115,6 +152,9 @@ export interface Translation {
   portCitySync: string;
   secureDocs: string;
   cargoVisibility: string;
+  strategicResearch: string;
+  assemblyLine: string;
+  inspectionPacking: string;
 }
 
 export const translations: Record<Language, Translation> = {
@@ -166,7 +206,10 @@ export const translations: Record<Language, Translation> = {
     riskAssessment: "Risk Assessment",
     portCitySync: "Port-City Sync",
     secureDocs: "Secure Documents",
-    cargoVisibility: "Cargo Visibility"
+    cargoVisibility: "Cargo Visibility",
+    strategicResearch: "Strategic Research",
+    assemblyLine: "Assembly & Kitting",
+    inspectionPacking: "Inspection & Packing"
   },
   es: {
     dashboard: "Tablero",
@@ -216,6 +259,9 @@ export const translations: Record<Language, Translation> = {
     riskAssessment: "Evaluación de Riesgos",
     portCitySync: "Sincronización Puerto-Ciudad",
     secureDocs: "Documentos Seguros",
-    cargoVisibility: "Visibilidad de Carga"
+    cargoVisibility: "Visibilidad de Carga",
+    strategicResearch: "Investigación Estratégica",
+    assemblyLine: "Ensamble y Kitting",
+    inspectionPacking: "Inspección y Empaque"
   }
 };

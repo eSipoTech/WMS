@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Send, X, Terminal, Cpu, TrendingUp, ShieldAlert } from 'lucide-react';
+import { Bot, Send, X, Terminal, Cpu, TrendingUp, ShieldAlert, Paperclip, Warehouse } from 'lucide-react';
 import { getAIAssistance } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 
 interface AIAssistantProps {
-  role: 'Control Tower' | 'Supply Chain Director' | 'COO Assistant';
+  role: 'Control Tower' | 'Supply Chain Director' | 'COO Assistant' | 'Assembly Expert' | 'Warehouse Director';
   language: 'en' | 'es';
   context: string;
+  onFileUpload?: (file: File) => void;
 }
 
-export const AIAssistant = ({ role, language, context }: AIAssistantProps) => {
+export const AIAssistant = ({ role, language, context, onFileUpload }: AIAssistantProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: 'user' | 'ai', text: string }[]>([]);
   const [input, setInput] = useState('');
@@ -34,17 +35,46 @@ export const AIAssistant = ({ role, language, context }: AIAssistantProps) => {
     }
   };
 
+  const handleFileClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.xlsx,.xls,.json';
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (file && onFileUpload) {
+        onFileUpload(file);
+        setMessages(prev => [...prev, { 
+          role: 'user', 
+          text: language === 'en' ? `Uploaded file: ${file.name}` : `Archivo cargado: ${file.name}` 
+        }]);
+        
+        // Simulate AI response to file upload
+        setTimeout(() => {
+          setMessages(prev => [...prev, { 
+            role: 'ai', 
+            text: language === 'en' 
+              ? `I've received **${file.name}**. I'm analyzing the data to optimize your warehouse layout and inventory. One moment...` 
+              : `He recibido **${file.name}**. Estoy analizando los datos para optimizar el diseño de su almacén e inventario. Un momento...` 
+          }]);
+        }, 1000);
+      }
+    };
+    input.click();
+  };
+
   const getIcon = () => {
     switch(role) {
       case 'Control Tower': return <Terminal className="w-5 h-5" />;
       case 'Supply Chain Director': return <TrendingUp className="w-5 h-5" />;
       case 'COO Assistant': return <ShieldAlert className="w-5 h-5" />;
+      case 'Assembly Expert': return <Cpu className="w-5 h-5" />;
+      case 'Warehouse Director': return <Warehouse className="w-5 h-5" />;
       default: return <Bot className="w-5 h-5" />;
     }
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
+    <div className="relative flex flex-col items-end gap-2">
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -100,31 +130,52 @@ export const AIAssistant = ({ role, language, context }: AIAssistantProps) => {
             </div>
 
             <div className="p-4 border-t border-white/10 bg-black/20">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder={language === 'en' ? "Type a message..." : "Escribe un mensaje..."}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-porteo-orange/50 transition-colors"
-                />
+              <div className="relative flex items-center gap-2">
                 <button
-                  onClick={handleSend}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-porteo-orange text-white rounded-lg hover:bg-porteo-orange/80 transition-colors"
+                  onClick={handleFileClick}
+                  className="p-2 bg-white/5 text-white/40 hover:text-white rounded-xl border border-white/10 transition-colors"
+                  title={language === 'en' ? "Upload data for AI analysis" : "Cargar datos para análisis de IA"}
                 >
-                  <Send className="w-4 h-4" />
+                  <Paperclip className="w-4 h-4" />
                 </button>
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    placeholder={language === 'en' ? "Type a message..." : "Escribe un mensaje..."}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-porteo-orange/50 transition-colors"
+                  />
+                  <button
+                    onClick={handleSend}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-porteo-orange text-white rounded-lg hover:bg-porteo-orange/80 transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="flex gap-2">
+      <div className="flex items-center gap-3">
+        <AnimatePresence>
+          {!isOpen && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="bg-porteo-blue text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-xl border border-white/10"
+            >
+              {role}
+            </motion.div>
+          )}
+        </AnimatePresence>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="w-14 h-14 bg-porteo-blue text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-transform active:scale-95 border border-white/20"
+          className="w-14 h-14 bg-porteo-blue text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-transform active:scale-95 border border-white/20 ai-assistant-button"
         >
           <Bot className="w-7 h-7" />
         </button>

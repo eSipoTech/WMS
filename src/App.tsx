@@ -36,7 +36,8 @@ import {
   Move,
   RefreshCw,
   Clock,
-  Globe2
+  Globe2,
+  LogOut
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -56,19 +57,24 @@ import { Warehouse3D } from './components/Warehouse3D';
 import { AIAssistant } from './components/AIAssistant';
 import { TPLWorkflow } from './components/TPLWorkflow';
 import { NotificationCenter } from './components/NotificationCenter';
-import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess } from './types';
-import { MOCK_WAREHOUSES, MOCK_INVENTORY, MOCK_TPL_PROCESSES, PORTEO_COLORS } from './constants';
+import { StrategicResearch } from './components/StrategicResearch';
+import { PatioManagement } from './components/PatioManagement';
+import { AssemblyLine } from './components/AssemblyLine';
+import { Analytics } from './components/Analytics';
+import { Financials } from './components/Financials';
+import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification } from './types';
+import { MOCK_WAREHOUSES, MOCK_INVENTORY, MOCK_TPL_PROCESSES, PORTEO_COLORS, MOCK_NOTIFICATIONS } from './constants';
 import { getMarketResearch } from './services/geminiService';
 import ReactMarkdown from 'react-markdown';
 
 const FINANCIAL_DATA = [
-  { name: 'Jan', cost: 4000, revenue: 6400, profit: 2400 },
-  { name: 'Feb', cost: 3000, revenue: 5398, profit: 2398 },
-  { name: 'Mar', cost: 2000, revenue: 9800, profit: 7800 },
-  { name: 'Apr', cost: 2780, revenue: 3908, profit: 1128 },
-  { name: 'May', cost: 1890, revenue: 4800, profit: 2910 },
-  { name: 'Jun', cost: 2390, revenue: 3800, profit: 1410 },
-  { name: 'Jul', cost: 3490, revenue: 4300, profit: 810 },
+  { name: 'Jan', cost: 4000, revenue: 6400, profit: 2400, pallets: 1200 },
+  { name: 'Feb', cost: 3000, revenue: 5398, profit: 2398, pallets: 1150 },
+  { name: 'Mar', cost: 2000, revenue: 9800, profit: 7800, pallets: 1400 },
+  { name: 'Apr', cost: 2780, revenue: 3908, profit: 1128, pallets: 1250 },
+  { name: 'May', cost: 1890, revenue: 4800, profit: 2910, pallets: 1300 },
+  { name: 'Jun', cost: 2390, revenue: 3800, profit: 1410, pallets: 1350 },
+  { name: 'Jul', cost: 3490, revenue: 4300, profit: 810, pallets: 1280 },
 ];
 
 const PIE_DATA = [
@@ -85,9 +91,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('control-tower');
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse>(warehouses[0]);
+
+  // Ensure selected warehouse matches market
+  useEffect(() => {
+    const marketWarehouses = warehouses.filter(w => w.market === market);
+    if (marketWarehouses.length > 0 && selectedWarehouse.market !== market) {
+      setSelectedWarehouse(marketWarehouses[0]);
+    }
+  }, [market, warehouses, selectedWarehouse.market]);
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [notifications, setNotifications] = useState<WMSNotification[]>(MOCK_NOTIFICATIONS);
+  
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [drillDownStat, setDrillDownStat] = useState<string | null>(null);
   const [drillDownView, setDrillDownView] = useState<'current' | 'average' | 'peak' | 'trend'>('trend');
   const [financialFilter, setFinancialFilter] = useState('revenue');
@@ -101,6 +118,18 @@ export default function App() {
   const [optimizationLogs, setOptimizationLogs] = useState<{id: string, msg: string, time: string}[]>([]);
   const [marketInsights, setMarketInsights] = useState<string>('');
   
+  const addNotification = (msg: string, type: 'market' | 'operational' | 'alert' = 'operational') => {
+    const newNotif: WMSNotification = {
+      id: Math.random().toString(36).substr(2, 9),
+      type,
+      title: { en: 'System Update', es: 'Actualización del Sistema' },
+      description: { en: msg, es: msg },
+      timestamp: 'Just now',
+      read: false
+    };
+    setNotifications(prev => [newNotif, ...prev]);
+  };
+
   const lang: Language = market === 'USA' ? 'en' : 'es';
   const t = translations[lang];
 
@@ -114,6 +143,68 @@ export default function App() {
     { id: 'TRK-003', carrier: 'Werner', type: '3.5 Van', driver: 'Bob Wilson', status: 'Waiting', dock: '-', eta: '10:30', idling: true },
     { id: 'TRK-004', carrier: 'Swift', type: 'Full Truck', driver: 'Alice Brown', status: 'Waiting', dock: '-', eta: '11:00', idling: true },
   ]);
+
+  const filteredWarehouses = useMemo(() => {
+    return warehouses.filter(w => w.market === market);
+  }, [warehouses, market]);
+
+  const filteredTrucks = useMemo(() => {
+    return trucks.filter(t => 
+      t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.carrier.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.driver.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.status.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [trucks, searchQuery]);
+
+  // Computed Analytics Data
+  const totalPallets = useMemo(() => {
+    return inventoryItems.reduce((acc, item) => acc + item.quantity, 0);
+  }, [inventoryItems]);
+
+  const totalCapacity = useMemo(() => {
+    return warehouses.reduce((acc, wh) => acc + wh.capacity, 0);
+  }, [warehouses]);
+
+  const occupancyPercentage = useMemo(() => {
+    if (totalCapacity === 0) return 0;
+    return Math.round((totalPallets / totalCapacity) * 100);
+  }, [totalPallets, totalCapacity]);
+
+  const activeTrucksCount = trucks.length;
+
+  const dynamicFinancialData = useMemo(() => {
+    // In a real app, this would be derived from actual transactions
+    // For now, we'll use the base data but maybe scale it slightly based on inventory
+    const scale = 1 + (inventoryItems.length / 100);
+    return FINANCIAL_DATA.map(d => ({
+      ...d,
+      revenue: Math.round(d.revenue * scale),
+      cost: Math.round(d.cost * scale),
+      profit: Math.round((d.revenue - d.cost) * scale)
+    }));
+  }, [inventoryItems]);
+
+  const dynamicPieData = useMemo(() => {
+    // Derive from inventory categories
+    const categories: Record<string, number> = {};
+    inventoryItems.forEach(item => {
+      const cat = item.category || 'Other';
+      categories[cat] = (categories[cat] || 0) + item.quantity;
+    });
+    
+    const data = Object.entries(categories).map(([name, value]) => ({ name, value }));
+    return data.length > 0 ? data : PIE_DATA;
+  }, [inventoryItems]);
+
+  const dynamicCostData = useMemo(() => {
+    // Scale base PIE_DATA by inventory volume
+    const scale = 1 + (inventoryItems.length / 100);
+    return PIE_DATA.map(d => ({
+      ...d,
+      value: Math.round(d.value * scale)
+    }));
+  }, [inventoryItems]);
 
   const [carriers, setCarriers] = useState([
     { name: 'Swift', score: 98, trend: '+2%', status: 'On Time', phone: '+1-555-0101' },
@@ -131,6 +222,16 @@ export default function App() {
   });
 
   // New Modal States
+  const [isRebalancing, setIsRebalancing] = useState(false);
+  const [aiTasks, setAiTasks] = useState([
+    { id: 'TASK-01', task: 'Reassign Dock 2 to TRK-902', priority: 'High', impact: '+15% Speed', desc: 'Dock 2 is currently underutilized while Dock 4 has a queue. Reassigning TRK-902 will balance the load.' },
+    { id: 'TASK-02', task: 'Relocate SKU-004 to Zone A', priority: 'Medium', impact: '-10% Travel', desc: 'SKU-004 has high picking frequency. Moving it closer to the packing station will reduce travel time.' },
+    { id: 'TASK-03', task: 'Adjust Night Shift Staffing', priority: 'High', impact: '+8% Productivity', desc: 'Projected volume for tonight is 20% higher. Adding 2 temporary staff members is recommended.' },
+    { id: 'TASK-04', task: 'Update Slotting for Seasonal Items', priority: 'Low', impact: '+5% Space', desc: 'Seasonal items are currently taking up prime locations. Relocating them to upper racks will free up floor space.' },
+    { id: 'TASK-05', task: 'Optimize Forklift Routes', priority: 'Medium', impact: '-12% Energy', desc: 'Forklift traffic in Zone B is congested. AI suggests a one-way traffic flow to improve safety and speed.' },
+    { id: 'TASK-06', task: 'Consolidate Partial Pallets', priority: 'Low', impact: '+18% Capacity', desc: 'Multiple partial pallets of SKU-992 are scattered. Consolidating them will free up 4 rack positions.' },
+    { id: 'TASK-07', task: 'Pre-stage High Priority Shipments', priority: 'High', impact: '-20m Lead Time', desc: 'Upcoming shipments for Customer X are high priority. Pre-staging them in Zone S will expedite loading.' }
+  ]);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [cfoQuery, setCfoQuery] = useState('');
   const [cfoChat, setCfoChat] = useState<{role: 'user' | 'ai', content: string}[]>([]);
@@ -333,6 +434,8 @@ export default function App() {
     { id: 'financials', icon: <DollarSign className="w-5 h-5" />, label: t.financials },
     { id: 'personnel', icon: <Users className="w-5 h-5" />, label: t.personnel },
     { id: 'patio', icon: <Truck className="w-5 h-5" />, label: t.truckManagement },
+    { id: 'assembly', icon: <Cpu className="w-5 h-5" />, label: t.assemblyLine },
+    { id: 'research', icon: <Globe2 className="w-5 h-5" />, label: t.strategicResearch },
     { id: 'admin', icon: <Settings className="w-5 h-5" />, label: lang === 'en' ? 'Admin / Layout' : 'Admin / Diseño' },
   ];
 
@@ -429,7 +532,7 @@ export default function App() {
                   if (wh) setSelectedWarehouse(wh);
                 }}
               >
-                {warehouses.map(wh => (
+                {filteredWarehouses.map(wh => (
                   <option key={wh.id} value={wh.id} className="bg-slate-900">{wh.name}</option>
                 ))}
               </select>
@@ -443,16 +546,57 @@ export default function App() {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-porteo-orange rounded-full border-2 border-[#050505]" />
             </button>
 
-            <div className="flex items-center gap-3 pl-6 border-l border-white/10">
-              <div className="text-right">
+            <div className="flex items-center gap-3 pl-6 border-l border-white/10 relative">
+              <div className="text-right hidden md:block">
                 <p className="text-sm font-bold text-white">Alex Camacho</p>
                 <p className="text-[10px] text-white/40 uppercase tracking-tighter">Director of Logistics</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-porteo-blue to-porteo-orange p-[1px]">
+              <button 
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                className="w-10 h-10 rounded-full bg-gradient-to-br from-porteo-blue to-porteo-orange p-[1px] hover:scale-105 transition-transform"
+              >
                 <div className="w-full h-full rounded-full bg-[#050505] flex items-center justify-center overflow-hidden">
                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=Alex`} alt="Avatar" referrerPolicy="no-referrer" />
                 </div>
-              </div>
+              </button>
+
+              <AnimatePresence>
+                {isProfileMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsProfileMenuOpen(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute top-full right-0 mt-2 w-48 bg-[#0A0A0A] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                    >
+                      <div className="p-4 border-b border-white/5 bg-white/5">
+                        <p className="text-sm font-bold text-white">Alex Camacho</p>
+                        <p className="text-[10px] text-white/40">acamacho@pilotplus.club</p>
+                      </div>
+                      <div className="p-2">
+                        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors">
+                          <Users className="w-4 h-4" />
+                          {lang === 'en' ? 'Profile' : 'Perfil'}
+                        </button>
+                        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors">
+                          <Settings className="w-4 h-4" />
+                          {lang === 'en' ? 'Settings' : 'Configuración'}
+                        </button>
+                        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors">
+                          <Activity className="w-4 h-4" />
+                          {lang === 'en' ? 'Activity Log' : 'Registro de Actividad'}
+                        </button>
+                        <div className="h-px bg-white/5 my-2" />
+                        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-rose-500 hover:bg-rose-500/10 transition-colors">
+                          <LogOut className="w-4 h-4" />
+                          {lang === 'en' ? 'Sign Out' : 'Cerrar Sesión'}
+                        </button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </header>
@@ -767,187 +911,22 @@ export default function App() {
             {activeTab === 'analytics' && (
               <motion.div 
                 key="analytics"
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-8"
+                exit={{ opacity: 0, y: -20 }}
               >
-                <div className="flex justify-between items-end">
-                  <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">
-                      {lang === 'en' ? 'Operational Analytics' : 'Analítica Operativa'}
-                    </h2>
-                    <p className="text-white/40 mt-1">
-                      {lang === 'en' ? 'Real-time performance metrics and business intelligence.' : 'Métricas de rendimiento en tiempo real e inteligencia de negocios.'}
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <button className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2">
-                      <Filter className="w-4 h-4" />
-                      {lang === 'en' ? 'Filters' : 'Filtros'}
-                    </button>
-                    <button className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-sm font-bold hover:bg-porteo-orange/90 transition-colors flex items-center gap-2">
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Export' : 'Exportar'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* KPI Bento Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {stats.map((stat, i) => (
-                    <div key={i} className="glass p-6 rounded-3xl border-b-4 border-porteo-orange/20">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="p-3 bg-white/5 rounded-2xl text-porteo-orange">
-                          {stat.icon}
-                        </div>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${stat.trend.startsWith('+') ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
-                          {stat.trend}
-                        </span>
-                      </div>
-                      <p className="text-white/40 text-[10px] uppercase font-bold tracking-widest">{stat.label}</p>
-                      <h3 className="text-2xl font-bold text-white mt-1">{stat.value}</h3>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Revenue & Profit Trend */}
-                  <div className="lg:col-span-2 glass p-8 rounded-3xl">
-                    <div className="flex justify-between items-center mb-8">
-                      <h3 className="text-lg font-bold text-white">{lang === 'en' ? 'Revenue vs. Cost Trend' : 'Tendencia de Ingresos vs. Costos'}</h3>
-                      <div className="flex gap-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-porteo-orange" />
-                          <span className="text-xs text-white/60">Revenue</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-porteo-blue" />
-                          <span className="text-xs text-white/60">Cost</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="h-80 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={FINANCIAL_DATA}>
-                          <defs>
-                            <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#F27D26" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#F27D26" stopOpacity={0}/>
-                            </linearGradient>
-                            <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#004A99" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#004A99" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                          <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #ffffff10', borderRadius: '16px' }}
-                            itemStyle={{ color: '#fff' }}
-                          />
-                          <Area type="monotone" dataKey="revenue" stroke="#F27D26" fillOpacity={1} fill="url(#colorRev)" strokeWidth={3} />
-                          <Area type="monotone" dataKey="cost" stroke="#004A99" fillOpacity={1} fill="url(#colorCost)" strokeWidth={3} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Space Utilization */}
-                  <div className="glass p-8 rounded-3xl">
-                    <h3 className="text-lg font-bold text-white mb-8">{lang === 'en' ? 'Space Utilization' : 'Uso de Espacio'}</h3>
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={PIE_DATA}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            paddingAngle={5}
-                            dataKey="value"
-                          >
-                            {PIE_DATA.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #ffffff10', borderRadius: '16px' }}
-                            itemStyle={{ color: '#fff' }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="mt-6 space-y-3">
-                      {PIE_DATA.map((item, i) => (
-                        <div key={i} className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                            <span className="text-xs text-white/60">{item.name}</span>
-                          </div>
-                          <span className="text-xs font-bold text-white">{((item.value / 1000) * 100).toFixed(0)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Order Fulfillment Accuracy */}
-                  <div className="glass p-8 rounded-3xl">
-                    <h3 className="text-lg font-bold text-white mb-6">{lang === 'en' ? 'Order Fulfillment Accuracy' : 'Precisión de Surtido'}</h3>
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={[
-                          { name: 'Mon', accuracy: 98.2 },
-                          { name: 'Tue', accuracy: 97.8 },
-                          { name: 'Wed', accuracy: 99.1 },
-                          { name: 'Thu', accuracy: 98.5 },
-                          { name: 'Fri', accuracy: 96.4 },
-                          { name: 'Sat', accuracy: 99.5 },
-                          { name: 'Sun', accuracy: 98.9 },
-                        ]}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                          <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                          <YAxis domain={[90, 100]} stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #ffffff10', borderRadius: '16px' }}
-                            itemStyle={{ color: '#fff' }}
-                          />
-                          <Bar dataKey="accuracy" fill="#00AEEF" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Labor Productivity */}
-                  <div className="glass p-8 rounded-3xl">
-                    <h3 className="text-lg font-bold text-white mb-6">{lang === 'en' ? 'Labor Productivity (Lines/Hr)' : 'Productividad Laboral (Líneas/Hr)'}</h3>
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={[
-                          { name: '08:00', lines: 120 },
-                          { name: '10:00', lines: 240 },
-                          { name: '12:00', lines: 180 },
-                          { name: '14:00', lines: 310 },
-                          { name: '16:00', lines: 290 },
-                          { name: '18:00', lines: 150 },
-                        ]}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                          <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #ffffff10', borderRadius: '16px' }}
-                            itemStyle={{ color: '#fff' }}
-                          />
-                          <Area type="step" dataKey="lines" stroke="#10b981" fill="#10b98110" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
+                <Analytics 
+                  lang={lang}
+                  financialData={dynamicFinancialData}
+                  pieData={dynamicPieData}
+                  colors={COLORS}
+                  statsOverride={{
+                    pallets: totalPallets.toLocaleString(),
+                    occupancy: `${occupancyPercentage}%`,
+                    trucks: activeTrucksCount.toString()
+                  }}
+                  exportReport={exportReport}
+                />
               </motion.div>
             )}
 
@@ -990,6 +969,7 @@ export default function App() {
                         <tr className="text-white/40 text-[10px] uppercase tracking-widest border-b border-white/10">
                           <th className="px-6 py-4">SKU</th>
                           <th className="px-6 py-4">Product</th>
+                          <th className="px-6 py-4">{lang === 'en' ? 'Brand / Category' : 'Marca / Categoría'}</th>
                           <th className="px-6 py-4">Quantity</th>
                           <th className="px-6 py-4">Location</th>
                           <th className="px-6 py-4">Customer</th>
@@ -1007,7 +987,18 @@ export default function App() {
                             className="border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer group"
                           >
                             <td className="px-6 py-4 font-mono text-porteo-orange font-bold">{item.sku}</td>
-                            <td className="px-6 py-4 text-white font-medium">{item.name}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium">{item.name}</span>
+                                {item.oemNumber && <span className="text-[10px] text-white/30">OEM: {item.oemNumber}</span>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="text-white/70">{item.brand || '-'}</span>
+                                <span className="text-[10px] text-porteo-orange/60 font-bold uppercase">{item.category || '-'}</span>
+                              </div>
+                            </td>
                             <td className="px-6 py-4 text-white/70">{item.quantity} {item.unit}</td>
                             <td className="px-6 py-4 text-white/70">{item.location}</td>
                             <td className="px-6 py-4 text-white/70">{item.customer}</td>
@@ -1029,21 +1020,58 @@ export default function App() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="h-full"
+                className="h-full flex flex-col space-y-4"
               >
-                <Warehouse3D 
-                  warehouse={selectedWarehouse}
-                  onViewDetails={(details) => {
-                    setSelectedRackDetails(details);
-                    setActiveModal('rack-detail');
-                  }}
-                  onAuditRack={(id) => {
-                    alert(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`);
-                  }}
-                  onRelocateItems={(id) => {
-                    alert(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`);
-                  }}
-                />
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-3xl font-bold text-white tracking-tight">{t.map3d}</h2>
+                    <p className="text-white/40">{selectedWarehouse.name} • {selectedWarehouse.location}</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => {
+                        setNewWarehouseData({
+                          name: '',
+                          location: '',
+                          capacity: 50000,
+                          layout: {
+                            racks: { rows: 5, cols: 8 },
+                            docks: 4,
+                            zones: []
+                          }
+                        });
+                        setActiveModal('create-warehouse');
+                      }}
+                      className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-sm font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20 flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      {lang === 'en' ? 'New Warehouse' : 'Nuevo Almacén'}
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+                    >
+                      <Settings className="w-4 h-4" />
+                      {lang === 'en' ? 'Layout Editor' : 'Editor de Diseño'}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <Warehouse3D 
+                    warehouse={selectedWarehouse}
+                    externalAction={external3DAction}
+                    onViewDetails={(details) => {
+                      setSelectedRackDetails(details);
+                      setActiveModal('rack-detail');
+                    }}
+                    onAuditRack={(id) => {
+                      alert(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`);
+                    }}
+                    onRelocateItems={(id) => {
+                      alert(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`);
+                    }}
+                  />
+                </div>
               </motion.div>
             )}
 
@@ -1059,8 +1087,8 @@ export default function App() {
                   language={lang} 
                   shipments={tplProcesses}
                   onUpdateStatus={(shipment) => {
-                    setSelectedTplShipment(shipment);
-                    setActiveModal('update-status');
+                    setTplProcesses(prev => prev.map(p => p.id === shipment.id ? shipment : p));
+                    addNotification(lang === 'en' ? `Shipment ${shipment.truckId} status updated to ${shipment.status}` : `Estatus de envío ${shipment.truckId} actualizado a ${shipment.status}`, 'operational');
                   }}
                   onViewDocuments={(shipment) => {
                     setSelectedTplShipment(shipment);
@@ -1080,82 +1108,13 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="space-y-8"
               >
-                <div className="flex justify-between items-center">
-                  <h2 className="text-3xl font-bold text-white tracking-tight">{t.financials}</h2>
-                  <div className="flex gap-3 bg-white/5 p-1 rounded-xl border border-white/10">
-                    {['revenue', 'cost', 'profit'].map((f) => (
-                      <button 
-                        key={f}
-                        onClick={() => setFinancialFilter(f)}
-                        className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${financialFilter === f ? 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20' : 'text-white/40 hover:text-white'}`}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div 
-                    onClick={() => alert(lang === 'en' ? 'Drilling down into performance metrics...' : 'Analizando métricas de rendimiento...')}
-                    className="lg:col-span-2 glass p-8 rounded-3xl cursor-pointer hover:border-white/20 transition-all"
-                  >
-                    <h3 className="text-lg font-bold text-white mb-8">Performance Analysis</h3>
-                    <div className="h-80 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={FINANCIAL_DATA}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                          <XAxis dataKey="name" stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#1A1A1A', border: '1px solid #ffffff10', borderRadius: '12px' }}
-                            itemStyle={{ color: '#fff' }}
-                          />
-                          <Bar dataKey={financialFilter} fill="#F27D26" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  <div 
-                    onClick={() => alert(lang === 'en' ? 'Viewing cost distribution details...' : 'Viendo detalles de distribución de costos...')}
-                    className="glass p-8 rounded-3xl cursor-pointer hover:border-white/20 transition-all"
-                  >
-                    <h3 className="text-lg font-bold text-white mb-8">Cost Distribution</h3>
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={PIE_DATA}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            paddingAngle={5}
-                            dataKey="value"
-                          >
-                            {PIE_DATA.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="mt-8 space-y-4">
-                      {PIE_DATA.map((item, i) => (
-                        <div key={i} className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i] }} />
-                            <span className="text-sm text-white/60">{item.name}</span>
-                          </div>
-                          <span className="text-sm font-bold text-white">${item.value}k</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <Financials 
+                  lang={lang} 
+                  financialData={dynamicFinancialData} 
+                  pieData={dynamicCostData} 
+                  colors={COLORS} 
+                />
               </motion.div>
             )}
 
@@ -1370,7 +1329,8 @@ export default function App() {
                           <tbody className="divide-y divide-white/5">
                             {trucks
                               .filter(t => {
-                                const matchesSearch = t.id.toLowerCase().includes(truckSearchQuery.toLowerCase()) || t.carrier.toLowerCase().includes(truckSearchQuery.toLowerCase());
+                                const effectiveSearch = truckSearchQuery || searchQuery;
+                                const matchesSearch = t.id.toLowerCase().includes(effectiveSearch.toLowerCase()) || t.carrier.toLowerCase().includes(effectiveSearch.toLowerCase());
                                 const matchesStatus = truckStatusFilter === 'all' || t.status === truckStatusFilter;
                                 return matchesSearch && matchesStatus;
                               })
@@ -1451,7 +1411,7 @@ export default function App() {
                         </div>
 
                         {/* Units on Map */}
-                        {trucks.map((truck, i) => {
+                        {filteredTrucks.map((truck, i) => {
                           const isAtDock = truck.dock !== '-';
                           const dockNum = isAtDock ? parseInt(truck.dock.replace('Dock ', '')) : 0;
                           
@@ -1614,6 +1574,39 @@ export default function App() {
                 </div>
               </motion.div>
             )}
+            {activeTab === 'patio' && (
+              <motion.div 
+                key="patio"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <PatioManagement lang={lang} searchQuery={searchQuery} />
+              </motion.div>
+            )}
+
+            {activeTab === 'assembly' && (
+              <motion.div 
+                key="assembly"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <AssemblyLine lang={lang} />
+              </motion.div>
+            )}
+
+            {activeTab === 'research' && (
+              <motion.div 
+                key="research"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <StrategicResearch lang={lang} setActiveTab={setActiveTab} />
+              </motion.div>
+            )}
+
             {activeTab === 'admin' && editingWarehouse && (
               <motion.div 
                 key="admin"
@@ -1800,6 +1793,7 @@ export default function App() {
                     <div className="glass p-1 rounded-[32px] overflow-hidden">
                       <Warehouse3D 
                         warehouse={editingWarehouse} 
+                        externalAction={external3DAction}
                         onViewDetails={(details) => {
                           setSelectedRackDetails(details);
                           setActiveModal('rack-detail');
@@ -1817,21 +1811,43 @@ export default function App() {
                         onClick={() => {
                           const input = document.createElement('input');
                           input.type = 'file';
-                          input.accept = '.json,.csv';
+                          input.accept = '.json,.csv,.xlsx,.xls';
                           input.onchange = (e: any) => {
                             const file = e.target.files[0];
                             if (file) {
-                              alert(lang === 'en' ? `Processing ${file.name} for layout update...` : `Procesando ${file.name} para actualización de diseño...`);
-                              // Simulate processing
-                              setTimeout(() => alert(lang === 'en' ? 'Layout data uploaded successfully!' : '¡Datos de diseño cargados con éxito!'), 1000);
+                              setIsProcessing(true);
+                              addNotification(lang === 'en' ? `AI is parsing ${file.name} to generate layout...` : `IA está analizando ${file.name} para generar diseño...`, 'operational');
+                              
+                              // Simulate AI parsing and layout generation
+                              setTimeout(() => {
+                                const rows = 8;
+                                const cols = 12;
+                                const zones = [
+                                  { name: 'High Velocity', color: '#F27D26', racks: ['0-0', '0-1', '1-0', '1-1', '0-2', '1-2'] },
+                                  { name: 'Cold Storage', color: '#00AEEF', racks: ['4-4', '4-5', '5-4', '5-5'] }
+                                ];
+                                
+                                if (editingWarehouse) {
+                                  setEditingWarehouse({
+                                    ...editingWarehouse,
+                                    layout: {
+                                      racks: { rows, cols },
+                                      docks: 6,
+                                      zones: zones
+                                    }
+                                  });
+                                }
+                                setIsProcessing(false);
+                                addNotification(lang === 'en' ? 'Layout generated automatically from file data!' : '¡Diseño generado automáticamente desde los datos del archivo!', 'operational');
+                              }, 2000);
                             }
                           };
                           input.click();
                         }}
                         className="px-4 py-2 bg-white/5 border border-white/10 text-white/60 rounded-xl text-xs font-bold hover:text-white hover:bg-white/10 transition-all flex items-center gap-2"
                       >
-                        <Download className="w-4 h-4" />
-                        {lang === 'en' ? 'Upload Layout Data' : 'Cargar Datos de Diseño'}
+                        <Upload className="w-4 h-4" />
+                        {lang === 'en' ? 'Upload Layout Data (XLS/CSV)' : 'Cargar Datos de Diseño (XLS/CSV)'}
                       </button>
                       <div className="flex gap-3">
                         <button 
@@ -2246,8 +2262,9 @@ export default function App() {
                   <div className="flex items-center gap-2 px-4 bg-white/5 border border-white/10 rounded-xl text-[10px] text-white/40 uppercase font-bold">
                     <Filter className="w-3 h-3" />
                     {tplProcesses.filter(p => {
-                      const matchesSearch = p.truckId.toLowerCase().includes(orderSearchQuery.toLowerCase()) || 
-                                          p.customer.toLowerCase().includes(orderSearchQuery.toLowerCase());
+                      const effectiveSearch = orderSearchQuery || searchQuery;
+                      const matchesSearch = p.truckId.toLowerCase().includes(effectiveSearch.toLowerCase()) || 
+                                          p.customer.toLowerCase().includes(effectiveSearch.toLowerCase());
                       const matchesCustomer = orderFilterCustomer === 'all' || p.customer === orderFilterCustomer;
                       const matchesWarehouse = orderFilterWarehouse === 'all' || p.destination === orderFilterWarehouse;
                       return matchesSearch && matchesCustomer && matchesWarehouse;
@@ -2257,8 +2274,9 @@ export default function App() {
               </div>
               <div className="p-8 overflow-y-auto flex-1 space-y-4">
                 {tplProcesses.filter(p => {
-                  const matchesSearch = p.truckId.toLowerCase().includes(orderSearchQuery.toLowerCase()) || 
-                                      p.customer.toLowerCase().includes(orderSearchQuery.toLowerCase());
+                  const effectiveSearch = orderSearchQuery || searchQuery;
+                  const matchesSearch = p.truckId.toLowerCase().includes(effectiveSearch.toLowerCase()) || 
+                                      p.customer.toLowerCase().includes(effectiveSearch.toLowerCase());
                   const matchesCustomer = orderFilterCustomer === 'all' || p.customer === orderFilterCustomer;
                   const matchesWarehouse = orderFilterWarehouse === 'all' || p.destination === orderFilterWarehouse;
                   return matchesSearch && matchesCustomer && matchesWarehouse;
@@ -2512,6 +2530,33 @@ export default function App() {
                         <p className="text-xl font-bold text-white">{selectedInventoryItem.customer}</p>
                       </div>
                     </div>
+
+                    {selectedInventoryItem.brand && (
+                      <div className="grid grid-cols-2 gap-8">
+                        <div>
+                          <p className="text-xs text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Brand' : 'Marca'}</p>
+                          <p className="text-lg font-bold text-white">{selectedInventoryItem.brand}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Category' : 'Categoría'}</p>
+                          <p className="text-lg font-bold text-white">{selectedInventoryItem.category}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedInventoryItem.compatibility && (
+                      <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-3">
+                        <p className="text-xs text-white/40 uppercase tracking-widest font-bold">{lang === 'en' ? 'Vehicle Compatibility' : 'Compatibilidad Vehicular'}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedInventoryItem.compatibility.map((model, i) => (
+                            <span key={i} className="px-3 py-1 bg-porteo-orange/10 text-porteo-orange text-[10px] font-bold rounded-full border border-porteo-orange/20">
+                              {model}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-4">
                       <div className="flex justify-between">
                         <span className="text-white/60">Current Stock</span>
@@ -2778,7 +2823,7 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="p-6 bg-white/5 rounded-3xl border border-white/10 hover:border-porteo-blue/30 transition-all group cursor-pointer" onClick={() => alert(lang === 'en' ? 'Opening Efficiency Loss Root Cause Analysis...' : 'Abriendo Análisis de Causa Raíz de Pérdida de Eficiencia...')}>
+                          <div className="p-6 bg-white/5 rounded-3xl border border-white/10 hover:border-porteo-blue/30 transition-all group cursor-pointer" onClick={() => setModalLevel(10)}>
                             <div className="flex justify-between items-center mb-4">
                               <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest group-hover:text-porteo-blue transition-colors">Efficiency Loss Breakdown</h4>
                               <ExternalLink className="w-3 h-3 text-white/20 group-hover:text-porteo-blue transition-colors" />
@@ -2801,7 +2846,7 @@ export default function App() {
                               ))}
                             </div>
                           </div>
-                          <div className="p-6 bg-white/5 rounded-3xl border border-white/10 hover:border-porteo-orange/30 transition-all group cursor-pointer" onClick={() => alert(lang === 'en' ? 'Opening Utilization Gap Optimization Tool...' : 'Abriendo Herramienta de Optimización de Brecha de Utilización...')}>
+                          <div className="p-6 bg-white/5 rounded-3xl border border-white/10 hover:border-porteo-orange/30 transition-all group cursor-pointer" onClick={() => setModalLevel(11)}>
                             <div className="flex justify-between items-center mb-4">
                               <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest group-hover:text-porteo-orange transition-colors">Utilization Gap</h4>
                               <ExternalLink className="w-3 h-3 text-white/20 group-hover:text-porteo-orange transition-colors" />
@@ -2851,7 +2896,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="p-4 bg-porteo-orange/10 border border-porteo-orange/30 rounded-2xl flex gap-3 min-h-[80px] group relative">
+                        <div className="p-4 bg-porteo-orange/10 border border-porteo-orange/30 rounded-2xl flex gap-3 min-h-[80px] group relative cursor-pointer" onClick={() => setModalLevel(12)}>
                           <Zap className="w-5 h-5 text-porteo-orange shrink-0" />
                           <div className="flex-1">
                             <div className="flex justify-between items-center mb-1">
@@ -3021,6 +3066,98 @@ export default function App() {
                             </button>
                           </div>
                         </div>
+                      </div>
+                    )}
+
+                    {modalLevel === 10 && (
+                      <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl">
+                          <h4 className="text-xl font-bold text-white mb-2">Efficiency Loss Root Cause</h4>
+                          <p className="text-sm text-white/60">Detailed breakdown of the 8% efficiency loss detected in the morning shift.</p>
+                        </div>
+                        <div className="space-y-4">
+                          {[
+                            { reason: 'Travel Time (Excessive distance between picks)', value: '4.2%', impact: 'High', color: 'text-porteo-orange' },
+                            { reason: 'Equipment Wait (Forklift availability)', value: '2.1%', impact: 'Medium', color: 'text-rose-500' },
+                            { reason: 'Admin/Paperwork (Manual entry delays)', value: '1.7%', impact: 'Low', color: 'text-porteo-blue' }
+                          ].map((item, i) => (
+                            <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center">
+                              <div>
+                                <p className="text-sm font-bold text-white">{item.reason}</p>
+                                <p className={`text-[10px] font-bold uppercase ${item.color}`}>{item.impact} Impact</p>
+                              </div>
+                              <span className="text-lg font-bold text-white">{item.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={() => setModalLevel(1)}
+                          className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold"
+                        >
+                          Back
+                        </button>
+                      </div>
+                    )}
+
+                    {modalLevel === 11 && (
+                      <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl">
+                          <h4 className="text-xl font-bold text-white mb-2">Utilization Gap Optimization</h4>
+                          <p className="text-sm text-white/60">Identifying opportunities to close the 12% idle time gap.</p>
+                        </div>
+                        <div className="space-y-4">
+                          {[
+                            { reason: 'Unassigned Time (Between tasks)', value: '6.5%', action: 'Auto-assign next task' },
+                            { reason: 'Shift Changeover (Overlap delays)', value: '3.5%', action: 'Staggered shift starts' },
+                            { reason: 'Training/Safety (On-the-job)', value: '2.0%', action: 'Digital training modules' }
+                          ].map((item, i) => (
+                            <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center">
+                              <div>
+                                <p className="text-sm font-bold text-white">{item.reason}</p>
+                                <p className="text-[10px] text-emerald-500 font-bold uppercase">Action: {item.action}</p>
+                              </div>
+                              <span className="text-lg font-bold text-white">{item.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={() => setModalLevel(1)}
+                          className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold"
+                        >
+                          Back
+                        </button>
+                      </div>
+                    )}
+
+                    {modalLevel === 12 && (
+                      <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                        <div className="p-6 bg-porteo-orange/10 border border-porteo-orange/30 rounded-3xl">
+                          <h4 className="text-xl font-bold text-white mb-2">AI Optimization Plan</h4>
+                          <p className="text-sm text-white/60">Automated strategy to recover 5% of efficiency loss.</p>
+                        </div>
+                        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl space-y-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 bg-porteo-orange rounded-full" />
+                            <p className="text-sm text-white/80">Re-slotting high-velocity items to Zone A.</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 bg-porteo-orange rounded-full" />
+                            <p className="text-sm text-white/80">Dynamic task interleaving for forklift operators.</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 bg-porteo-orange rounded-full" />
+                            <p className="text-sm text-white/80">Real-time congestion alerts for picking aisles.</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            addNotification(lang === 'en' ? 'Labor Optimization Plan Applied' : 'Plan de Optimización Laboral Aplicado', 'operational');
+                            setModalLevel(1);
+                          }}
+                          className="w-full py-4 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/80 transition-all"
+                        >
+                          APPLY PLAN
+                        </button>
                       </div>
                     )}
                   </div>
@@ -3343,9 +3480,9 @@ export default function App() {
                           onClick={() => {
                             const name = prompt(lang === 'en' ? 'Enter System Name (e.g. NetSuite, Microsoft Dynamics):' : 'Ingrese nombre del sistema (ej. NetSuite, Microsoft Dynamics):');
                             if (name) {
-                              alert(lang === 'en' ? `Initializing connection with ${name}...` : `Inicializando conexión con ${name}...`);
+                              addNotification(lang === 'en' ? `Initializing connection with ${name}...` : `Inicializando conexión con ${name}...`, 'operational');
                               setTimeout(() => {
-                                alert(lang === 'en' ? `Connection with ${name} established.` : `Conexión con ${name} establecida.`);
+                                addNotification(lang === 'en' ? `Connection with ${name} established.` : `Conexión con ${name} establecida.`, 'operational');
                               }, 1500);
                             }
                           }}
@@ -3522,10 +3659,14 @@ export default function App() {
                             onClick={() => {
                               setIsProcessing(true);
                               setTimeout(() => {
-                                alert(lang === 'en' 
-                                  ? `Security team dispatched to ${selectedSubItem?.area}. \n\nCommunication Channels: \n- Security HQ notified via Radio \n- Mobile Push Notification sent to on-site team \n- Incident report emailed to supervisor.` 
-                                  : `Equipo de seguridad enviado a ${selectedSubItem?.area}. \n\nCanales de Comunicación: \n- HQ de Seguridad notificado vía Radio \n- Notificación Push enviada al equipo en sitio \n- Reporte de incidente enviado por correo al supervisor.`);
+                                addNotification(lang === 'en' 
+                                  ? `Security team dispatched to ${selectedSubItem?.area}.` 
+                                  : `Equipo de seguridad enviado a ${selectedSubItem?.area}.`, 'operational');
+                                addNotification(lang === 'en'
+                                  ? `Communication Channels Active: Radio, Push, Email.`
+                                  : `Canales de Comunicación Activos: Radio, Push, Correo.`, 'operational');
                                 setIsProcessing(false);
+                                setModalLevel(1);
                               }, 2000);
                             }}
                             className="py-3 bg-rose-500 text-white rounded-xl font-bold disabled:opacity-50"
@@ -3842,11 +3983,12 @@ export default function App() {
                           <button 
                             disabled={isProcessing}
                             onClick={() => {
-                              setIsProcessing(true);
+                              setIsRebalancing(true);
                               setTimeout(() => {
-                                setIsProcessing(false);
-                                alert(lang === 'en' ? 'Stock rebalancing strategy applied. 120 pallets scheduled for relocation.' : 'Estrategia de rebalanceo de stock aplicada. 120 pallets programados para reubicación.');
-                              }, 2000);
+                                setIsRebalancing(false);
+                                addNotification(lang === 'en' ? `Stock rebalancing strategy applied for ${selectedCategory.category}. 120 pallets scheduled for relocation.` : `Estrategia de rebalanceo de stock aplicada para ${selectedCategory.category}. 120 pallets programados para reubicación.`, 'operational');
+                                setModalLevel(1);
+                              }, 3000);
                             }}
                             className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
                           >
@@ -3980,19 +4122,14 @@ export default function App() {
                 {activeModal === 'ai-tasks' && (
                   <div className="space-y-6">
                     <div className="p-6 bg-porteo-orange/10 border border-porteo-orange/30 rounded-3xl">
-                      <h3 className="text-xl font-bold text-white mb-2">7 Pending AI Tasks</h3>
+                      <h3 className="text-xl font-bold text-white mb-2">{aiTasks.length} Pending AI Tasks</h3>
                       <p className="text-sm text-white/60">Automated optimizations requiring supervisor approval.</p>
                     </div>
                     {modalLevel === 1 && (
                       <div className="space-y-3">
-                        {[
-                          { id: 'TASK-01', task: 'Reassign Dock 2 to TRK-902', priority: 'High', impact: '+15% Speed', desc: 'Dock 2 is currently underutilized while Dock 4 has a queue. Reassigning TRK-902 will balance the load.' },
-                          { id: 'TASK-02', task: 'Relocate SKU-004 to Zone A', priority: 'Medium', impact: '-10% Travel', desc: 'SKU-004 has high picking frequency. Moving it closer to the packing station will reduce travel time.' },
-                          { id: 'TASK-03', task: 'Adjust Night Shift Staffing', priority: 'High', impact: '+8% Productivity', desc: 'Projected volume for tonight is 20% higher. Adding 2 temporary staff members is recommended.' },
-                          { id: 'TASK-04', task: 'Update Slotting for Seasonal Items', priority: 'Low', impact: '+5% Space', desc: 'Seasonal items are currently taking up prime locations. Relocating them to upper racks will free up floor space.' }
-                        ].map((task, i) => (
+                        {aiTasks.map((task, i) => (
                           <button 
-                            key={i} 
+                            key={task.id} 
                             onClick={() => {
                               setSelectedTask(task);
                               setModalLevel(2);
@@ -4043,8 +4180,10 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-4">
                           <button 
                             onClick={() => {
-                              alert('Task approved and executed.');
+                              addNotification(lang === 'en' ? `Task ${selectedTask.id} Approved: ${selectedTask.task}` : `Tarea ${selectedTask.id} Aprobada: ${selectedTask.task}`, 'operational');
+                              setAiTasks(prev => prev.filter(t => t.id !== selectedTask.id));
                               setModalLevel(1);
+                              setSelectedTask(null);
                             }}
                             className="py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/80 transition-all"
                           >
@@ -4526,6 +4665,39 @@ export default function App() {
                     </div>
                     <button 
                       onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.csv,.xlsx,.xls,.json';
+                        input.onchange = (e: any) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setIsProcessing(true);
+                            addNotification(lang === 'en' ? `AI is analyzing ${file.name} to optimize initial layout...` : `IA está analizando ${file.name} para optimizar el diseño inicial...`, 'operational');
+                            setTimeout(() => {
+                              setNewWarehouseData({
+                                ...newWarehouseData,
+                                layout: {
+                                  racks: { rows: 10, cols: 15 },
+                                  docks: 8,
+                                  zones: [
+                                    { name: 'AI Optimized Zone A', color: '#F27D26', racks: ['0-0', '1-1'] }
+                                  ]
+                                }
+                              });
+                              setIsProcessing(false);
+                              addNotification(lang === 'en' ? 'Layout optimized by AI from file data!' : '¡Diseño optimizado por IA desde los datos del archivo!', 'operational');
+                            }, 2000);
+                          }
+                        };
+                        input.click();
+                      }}
+                      className="w-full py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2 mb-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {lang === 'en' ? 'Upload Layout/Inventory Data' : 'Cargar Datos de Diseño/Inventario'}
+                    </button>
+                    <button 
+                      onClick={() => {
                         if (!newWarehouseData.name || !newWarehouseData.location) {
                           alert(lang === 'en' ? 'Please fill in all fields' : 'Por favor complete todos los campos');
                           return;
@@ -4534,16 +4706,18 @@ export default function App() {
                           id: `wh-${warehouses.length + 1}`,
                           name: newWarehouseData.name!,
                           location: newWarehouseData.location!,
+                          market: market,
                           capacity: 50000,
                           currentOccupancy: 0,
                           temperature: 20,
                           status: 'optimal',
                           layout: newWarehouseData.layout as any
                         };
-                        setWarehouses([...warehouses, newWh]);
+                        const updatedWarehouses = [...warehouses, newWh];
+                        setWarehouses(updatedWarehouses);
                         setSelectedWarehouse(newWh);
                         setActiveModal(null);
-                        alert(lang === 'en' ? 'New warehouse created successfully!' : '¡Nuevo almacén creado con éxito!');
+                        addNotification(lang === 'en' ? `Warehouse ${newWh.name} initialized successfully!` : `¡Almacén ${newWh.name} inicializado con éxito!`, 'operational');
                       } }
                       className="w-full py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
                     >
@@ -4798,18 +4972,11 @@ export default function App() {
                       </motion.div>
                     )}
                     <div className="grid grid-cols-1 gap-3">
-                      {['Packing List.pdf', 'Bill of Lading.pdf', 'Customs Invoice.pdf', 'Proof of Delivery.jpg'].map((doc, i) => (
+                      {(selectedTplShipment.documents || ['Packing List.pdf', 'Bill of Lading.pdf', 'Customs Invoice.pdf', 'Proof of Delivery.jpg']).map((doc, i) => (
                         <div 
                           key={i} 
                           onClick={() => {
                             alert(lang === 'en' ? `Downloading ${doc}...` : `Descargando ${doc}...`);
-                            // Simulate download
-                            const blob = new Blob(["Simulated content"], { type: "text/plain" });
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = doc;
-                            a.click();
                           }}
                           className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-orange/50 cursor-pointer group transition-all"
                         >
@@ -4827,7 +4994,14 @@ export default function App() {
                         {lang === 'en' ? 'Upload Missing Document' : 'Subir Documento Faltante'}
                         <input type="file" className="hidden" onChange={(e) => {
                           if (e.target.files?.[0]) {
-                            alert(lang === 'en' ? `Document ${e.target.files[0].name} uploaded successfully.` : `Documento ${e.target.files[0].name} subido con éxito.`);
+                            const fileName = e.target.files[0].name;
+                            const updatedShipment = {
+                              ...selectedTplShipment,
+                              documents: [...(selectedTplShipment.documents || []), fileName]
+                            };
+                            setSelectedTplShipment(updatedShipment);
+                            setTplProcesses(prev => prev.map(p => p.id === updatedShipment.id ? updatedShipment : p));
+                            addNotification(lang === 'en' ? `Document ${fileName} uploaded successfully.` : `Documento ${fileName} subido con éxito.`, 'operational');
                           }
                         }} />
                       </label>
@@ -4879,28 +5053,90 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {isRebalancing && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-center p-8"
+          >
+            <div className="w-24 h-24 bg-porteo-orange/20 rounded-3xl flex items-center justify-center mb-8">
+              <RefreshCw className="w-12 h-12 text-porteo-orange animate-spin" />
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-2">
+              {lang === 'en' ? 'Inventory Rebalancing' : 'Rebalanceo de Inventario'}
+            </h3>
+            <p className="text-white/40 max-w-md">
+              {lang === 'en' 
+                ? 'AI is optimizing stock distribution across your network to reduce lead times.' 
+                : 'La IA está optimizando la distribución de stock en su red para reducir los tiempos de entrega.'}
+            </p>
+            <div className="mt-8 w-64 bg-white/5 h-2 rounded-full overflow-hidden">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: '100%' }}
+                transition={{ duration: 3 }}
+                className="bg-porteo-orange h-full"
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Notification Center */}
       <NotificationCenter 
         isOpen={isNotificationsOpen} 
         onClose={() => setIsNotificationsOpen(false)} 
         language={lang} 
+        notifications={notifications}
         onAction={(action) => {
           if (action.includes('Strategy')) {
-            alert(lang === 'en' ? 'Applying AI Strategy: Rerouting 15% of inventory to satellite hubs.' : 'Aplicando Estrategia IA: Redirigiendo 15% del inventario a centros satélite.');
+            setIsRebalancing(true);
+            setTimeout(() => {
+              setIsRebalancing(false);
+              addNotification(lang === 'en' ? 'Inventory Rebalanced: 5% of stock rerouted for efficiency.' : 'Inventario Rebalanceado: 5% del stock redirigido por eficiencia.', 'operational');
+              setInventoryItems(prev => prev.map(item => ({
+                ...item,
+                quantity: Math.floor(item.quantity * 0.95) // Simulate rerouting 5%
+              })));
+            }, 3000);
           } else if (action.includes('Dock')) {
-            alert(lang === 'en' ? 'Optimizing Docks: Reassigning TRK-902 to Dock 2 for faster unloading.' : 'Optimizando Muelles: Reasignando TRK-902 al Muelle 2 para descarga rápida.');
+            addNotification(lang === 'en' ? 'Dock 4 Congestion Resolved: TRK-003 moved to Dock 5.' : 'Congestión en Muelle 4 Resuelta: TRK-003 movido al Muelle 5.', 'operational');
+            setTrucks(prev => prev.map(t => t.id === 'TRK-003' ? { ...t, status: 'Unloading', dock: 'Dock 5' } : t));
           } else {
-            alert(lang === 'en' ? `Action triggered: ${action}` : `Acción activada: ${action}`);
+            addNotification(lang === 'en' ? `Action executed: ${action}` : `Acción ejecutada: ${action}`, 'operational');
           }
           setIsNotificationsOpen(false);
         }}
       />
 
       {/* AI Assistants Floating Interface */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4">
-        <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse.name}, Occupancy: ${selectedWarehouse.currentOccupancy}/${selectedWarehouse.capacity}, Status: ${selectedWarehouse.status}`} />
-        <AIAssistant role="Supply Chain Director" language={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
-        <AIAssistant role="COO Assistant" language={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
+        <div className="pointer-events-auto flex flex-col items-end gap-3">
+          <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse.name}, Occupancy: ${selectedWarehouse.currentOccupancy}/${selectedWarehouse.capacity}, Status: ${selectedWarehouse.status}`} />
+          <AIAssistant role="Warehouse Director" language={lang} context={`Warehouse: ${selectedWarehouse.name}, Layout: ${selectedWarehouse.layout.racks.rows}x${selectedWarehouse.layout.racks.cols}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
+            setIsProcessing(true);
+            addNotification(lang === 'en' ? `AI Director is analyzing ${file.name}...` : `El Director de IA está analizando ${file.name}...`, 'operational');
+            setTimeout(() => {
+              const rows = Math.floor(Math.random() * 4) + 8;
+              const cols = Math.floor(Math.random() * 6) + 12;
+              const updatedWh = {
+                ...selectedWarehouse,
+                layout: {
+                  ...selectedWarehouse.layout,
+                  racks: { rows, cols }
+                }
+              };
+              setSelectedWarehouse(updatedWh);
+              setWarehouses(prev => prev.map(w => w.id === updatedWh.id ? updatedWh : w));
+              setIsProcessing(false);
+              addNotification(lang === 'en' ? `AI Director optimized layout based on ${file.name}!` : `¡El Director de IA optimizó el diseño basado en ${file.name}!`, 'operational');
+            }, 3000);
+          }} />
+          <AIAssistant role="Supply Chain Director" language={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
+          <AIAssistant role="COO Assistant" language={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />
+        </div>
       </div>
     </div>
   );
