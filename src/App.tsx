@@ -13,6 +13,7 @@ import {
   Search, 
   Bell, 
   ChevronRight,
+  ChevronDown,
   Plus,
   ArrowUpRight,
   ArrowDownLeft,
@@ -37,7 +38,8 @@ import {
   RefreshCw,
   Clock,
   Globe2,
-  LogOut
+  LogOut,
+  Bot
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -56,6 +58,9 @@ import {
 import { Warehouse3D } from './components/Warehouse3D';
 import { AIAssistant } from './components/AIAssistant';
 import { TPLWorkflow } from './components/TPLWorkflow';
+import { IntelligenceAgents } from './components/IntelligenceAgents';
+import { CommercialManagement } from './components/CommercialManagement';
+import { WarehouseOperations } from './components/WarehouseOperations';
 import { NotificationCenter } from './components/NotificationCenter';
 import { StrategicResearch } from './components/StrategicResearch';
 import { PatioManagement } from './components/PatioManagement';
@@ -89,6 +94,7 @@ const COLORS = ['#004A99', '#F27D26', '#00AEEF', '#1A1A1A'];
 export default function App() {
   const [market, setMarket] = useState<Market>('USA');
   const [activeTab, setActiveTab] = useState('control-tower');
+  const [isAiHubOpen, setIsAiHubOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse>(warehouses[0]);
 
@@ -425,19 +431,65 @@ export default function App() {
     setMarket(prev => prev === 'USA' ? 'MEXICO' : 'USA');
   };
 
-  const menuItems = [
-    { id: 'control-tower', icon: <Cpu className="w-5 h-5" />, label: t.controlTower },
-    { id: 'analytics', icon: <BarChart3 className="w-5 h-5" />, label: t.analytics },
-    { id: 'inventory', icon: <Package className="w-5 h-5" />, label: t.inventory },
-    { id: 'map3d', icon: <MapIcon className="w-5 h-5" />, label: t.map3d },
-    { id: 'tpl', icon: <Activity className="w-5 h-5" />, label: t.tpl },
-    { id: 'financials', icon: <DollarSign className="w-5 h-5" />, label: t.financials },
-    { id: 'personnel', icon: <Users className="w-5 h-5" />, label: t.personnel },
-    { id: 'patio', icon: <Truck className="w-5 h-5" />, label: t.truckManagement },
-    { id: 'assembly', icon: <Cpu className="w-5 h-5" />, label: t.assemblyLine },
-    { id: 'research', icon: <Globe2 className="w-5 h-5" />, label: t.strategicResearch },
-    { id: 'admin', icon: <Settings className="w-5 h-5" />, label: lang === 'en' ? 'Admin / Layout' : 'Admin / Diseño' },
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['warehouse']);
+
+  const menuCategories = [
+    {
+      id: 'warehouse',
+      label: lang === 'en' ? 'Warehouse' : 'Almacén',
+      icon: <WarehouseIcon className="w-5 h-5" />,
+      items: [
+        { id: 'operations', icon: <BoxIcon className="w-4 h-4" />, label: t.operations },
+        { id: 'inventory', icon: <Package className="w-4 h-4" />, label: t.inventory },
+        { id: 'map3d', icon: <MapIcon className="w-4 h-4" />, label: t.map3d },
+      ]
+    },
+    {
+      id: 'logistics',
+      label: lang === 'en' ? 'Logistics' : 'Logística',
+      icon: <Truck className="w-5 h-5" />,
+      items: [
+        { id: 'patio', icon: <Truck className="w-4 h-4" />, label: t.truckManagement },
+        { id: 'tpl', icon: <Activity className="w-4 h-4" />, label: t.tpl },
+        { id: 'assembly', icon: <Cpu className="w-4 h-4" />, label: t.assemblyLine },
+      ]
+    },
+    {
+      id: 'commercial',
+      label: lang === 'en' ? 'Commercial' : 'Comercial',
+      icon: <DollarSign className="w-5 h-5" />,
+      items: [
+        { id: 'commercial', icon: <DollarSign className="w-4 h-4" />, label: t.commercial },
+        { id: 'research', icon: <Globe2 className="w-4 h-4" />, label: t.strategicResearch },
+      ]
+    },
+    {
+      id: 'intelligence',
+      label: lang === 'en' ? 'Intelligence' : 'Inteligencia',
+      icon: <Bot className="w-5 h-5" />,
+      items: [
+        { id: 'control-tower', icon: <Cpu className="w-4 h-4" />, label: t.controlTower },
+        { id: 'analytics', icon: <BarChart3 className="w-4 h-4" />, label: t.analytics },
+        { id: 'intelligence-agents', icon: <Bot className="w-4 h-4" />, label: t.intelligenceAgents },
+      ]
+    },
+    {
+      id: 'admin',
+      label: lang === 'en' ? 'Administration' : 'Administración',
+      icon: <Settings className="w-5 h-5" />,
+      items: [
+        { id: 'financials', icon: <DollarSign className="w-4 h-4" />, label: t.financials },
+        { id: 'personnel', icon: <Users className="w-4 h-4" />, label: t.personnel },
+        { id: 'admin', icon: <Settings className="w-4 h-4" />, label: lang === 'en' ? 'Admin / Layout' : 'Admin / Diseño' },
+      ]
+    }
   ];
+
+  const toggleCategory = (id: string) => {
+    setExpandedCategories(prev => 
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
 
   const stats = [
     { id: 'pallets', label: lang === 'en' ? 'Total Pallets' : 'Total de Pallets', value: '12,450', trend: '+12%', icon: <BoxIcon /> },
@@ -468,25 +520,49 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto scrollbar-hide">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                activeTab === item.id 
-                ? 'bg-porteo-blue text-white shadow-lg shadow-porteo-blue/20' 
-                : 'text-white/50 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <span className={`${activeTab === item.id ? 'text-white' : 'text-white/40 group-hover:text-porteo-orange'} transition-colors`}>
-                {item.icon}
-              </span>
-              <span className="text-sm font-medium">{item.label}</span>
-              {activeTab === item.id && (
-                <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 bg-white rounded-full" />
-              )}
-            </button>
+        <nav className="flex-1 px-4 py-4 space-y-4 overflow-y-auto scrollbar-hide">
+          {menuCategories.map((category) => (
+            <div key={category.id} className="space-y-1">
+              <button
+                onClick={() => toggleCategory(category.id)}
+                className="w-full flex items-center gap-3 px-4 py-2 text-white/40 hover:text-white transition-colors uppercase text-[10px] font-bold tracking-widest"
+              >
+                {category.icon}
+                <span>{category.label}</span>
+                <ChevronDown className={`ml-auto w-3 h-3 transition-transform ${expandedCategories.includes(category.id) ? 'rotate-180' : ''}`} />
+              </button>
+              
+              <AnimatePresence initial={false}>
+                {expandedCategories.includes(category.id) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden space-y-1"
+                  >
+                    {category.items.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveTab(item.id)}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group ${
+                          activeTab === item.id 
+                          ? 'bg-porteo-blue text-white shadow-lg shadow-porteo-blue/20' 
+                          : 'text-white/50 hover:bg-white/5 hover:text-white'
+                        }`}
+                      >
+                        <span className={`${activeTab === item.id ? 'text-white' : 'text-white/40 group-hover:text-porteo-orange'} transition-colors`}>
+                          {item.icon}
+                        </span>
+                        <span className="text-sm font-medium">{item.label}</span>
+                        {activeTab === item.id && (
+                          <motion.div layoutId="active-pill" className="ml-auto w-1.5 h-1.5 bg-white rounded-full" />
+                        )}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           ))}
         </nav>
 
@@ -1099,6 +1175,42 @@ export default function App() {
                     alert(lang === 'en' ? `Successfully imported ${newShipments.length} shipments!` : `¡Se importaron con éxito ${newShipments.length} envíos!`);
                   }}
                 />
+              </motion.div>
+            )}
+
+            {activeTab === 'intelligence-agents' && (
+              <motion.div 
+                key="intelligence-agents"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="h-full"
+              >
+                <IntelligenceAgents language={lang} />
+              </motion.div>
+            )}
+
+            {activeTab === 'operations' && (
+              <motion.div 
+                key="operations"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="h-full"
+              >
+                <WarehouseOperations language={lang} />
+              </motion.div>
+            )}
+
+            {activeTab === 'commercial' && (
+              <motion.div 
+                key="commercial"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="h-full"
+              >
+                <CommercialManagement language={lang} />
               </motion.div>
             )}
 
@@ -5111,32 +5223,50 @@ export default function App() {
         }}
       />
 
-      {/* AI Assistants Floating Interface */}
+      {/* AI Assistants Floating Interface - Refactored to avoid blocking UI */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
-        <div className="pointer-events-auto flex flex-col items-end gap-3">
-          <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse.name}, Occupancy: ${selectedWarehouse.currentOccupancy}/${selectedWarehouse.capacity}, Status: ${selectedWarehouse.status}`} />
-          <AIAssistant role="Warehouse Director" language={lang} context={`Warehouse: ${selectedWarehouse.name}, Layout: ${selectedWarehouse.layout.racks.rows}x${selectedWarehouse.layout.racks.cols}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
-            setIsProcessing(true);
-            addNotification(lang === 'en' ? `AI Director is analyzing ${file.name}...` : `El Director de IA está analizando ${file.name}...`, 'operational');
-            setTimeout(() => {
-              const rows = Math.floor(Math.random() * 4) + 8;
-              const cols = Math.floor(Math.random() * 6) + 12;
-              const updatedWh = {
-                ...selectedWarehouse,
-                layout: {
-                  ...selectedWarehouse.layout,
-                  racks: { rows, cols }
-                }
-              };
-              setSelectedWarehouse(updatedWh);
-              setWarehouses(prev => prev.map(w => w.id === updatedWh.id ? updatedWh : w));
-              setIsProcessing(false);
-              addNotification(lang === 'en' ? `AI Director optimized layout based on ${file.name}!` : `¡El Director de IA optimizó el diseño basado en ${file.name}!`, 'operational');
-            }, 3000);
-          }} />
-          <AIAssistant role="Supply Chain Director" language={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
-          <AIAssistant role="COO Assistant" language={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />
-        </div>
+        <AnimatePresence>
+          {isAiHubOpen && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.9 }}
+              className="pointer-events-auto flex flex-col items-end gap-3 mb-2"
+            >
+              <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse.name}, Occupancy: ${selectedWarehouse.currentOccupancy}/${selectedWarehouse.capacity}, Status: ${selectedWarehouse.status}`} />
+              <AIAssistant role="Warehouse Director" language={lang} context={`Warehouse: ${selectedWarehouse.name}, Layout: ${selectedWarehouse.layout.racks.rows}x${selectedWarehouse.layout.racks.cols}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
+                setIsProcessing(true);
+                addNotification(lang === 'en' ? `AI Director is analyzing ${file.name}...` : `El Director de IA está analizando ${file.name}...`, 'operational');
+                setTimeout(() => {
+                  const rows = Math.floor(Math.random() * 4) + 8;
+                  const cols = Math.floor(Math.random() * 6) + 12;
+                  const updatedWh = {
+                    ...selectedWarehouse,
+                    layout: {
+                      ...selectedWarehouse.layout,
+                      racks: { rows, cols }
+                    }
+                  };
+                  setSelectedWarehouse(updatedWh);
+                  setWarehouses(prev => prev.map(w => w.id === updatedWh.id ? updatedWh : w));
+                  setIsProcessing(false);
+                  addNotification(lang === 'en' ? `AI Director optimized layout based on ${file.name}!` : `¡El Director de IA optimizó el diseño basado en ${file.name}!`, 'operational');
+                }, 3000);
+              }} />
+              <AIAssistant role="Supply Chain Director" language={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
+              <AIAssistant role="COO Assistant" language={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        <button
+          onClick={() => setIsAiHubOpen(!isAiHubOpen)}
+          className={`pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all hover:scale-110 active:scale-95 border border-white/20 ${
+            isAiHubOpen ? 'bg-porteo-orange text-white' : 'bg-porteo-blue text-white'
+          }`}
+        >
+          {isAiHubOpen ? <X className="w-7 h-7" /> : <Bot className="w-7 h-7" />}
+        </button>
       </div>
     </div>
   );

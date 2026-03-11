@@ -74,6 +74,41 @@ export interface WMSNotification {
   read: boolean;
 }
 
+export interface BinLocation {
+  id: string;
+  zone: 'picking' | 'bulk' | 'staging' | 'returns';
+  aisle: string;
+  rack: string;
+  level: string;
+  position: string;
+  capacity: number;
+  currentVolume: number;
+  sku?: string;
+}
+
+export interface CustomerPricing {
+  customerId: string;
+  sku: string;
+  basePrice: number;
+  discountedPrice: number;
+  contractId: string;
+}
+
+export interface SupplierRebate {
+  supplierId: string;
+  threshold: number;
+  rebatePercentage: number;
+  currentVolume: number;
+  status: 'active' | 'achieved' | 'pending';
+}
+
+export interface SalesChannel {
+  id: string;
+  name: string;
+  type: 'ecommerce' | 'retail' | 'wholesale';
+  status: 'online' | 'offline';
+}
+
 export interface CartaPorte {
   id: string;
   folio: string;
@@ -114,8 +149,11 @@ export interface Translation {
   truckManagement: string;
   lastMile: string;
   tpl: string;
+  intelligenceAgents: string;
   aiAssistants: string;
   marketToggle: string;
+  commercial: string;
+  operations: string;
   storage: string;
   crossDock: string;
   picking: string;
@@ -170,8 +208,11 @@ export const translations: Record<Language, Translation> = {
     truckManagement: "Truck & Patio",
     lastMile: "Last Mile",
     tpl: "3PL Workflow",
+    intelligenceAgents: "Intelligence Agents",
     aiAssistants: "AI Assistants",
     marketToggle: "Switch to Mexico (ES)",
+    commercial: "Commercial & Contracts",
+    operations: "Warehouse Ops",
     storage: "Storage",
     crossDock: "Cross-Dock",
     picking: "Picking",
@@ -223,8 +264,11 @@ export const translations: Record<Language, Translation> = {
     truckManagement: "Camiones y Patio",
     lastMile: "Última Milla",
     tpl: "Flujo 3PL",
+    intelligenceAgents: "Agentes de Inteligencia",
     aiAssistants: "Asistentes IA",
     marketToggle: "Cambiar a USA (EN)",
+    commercial: "Comercial y Contratos",
+    operations: "Ops de Almacén",
     storage: "Almacenamiento",
     crossDock: "Cruce de Andén",
     picking: "Surtido",

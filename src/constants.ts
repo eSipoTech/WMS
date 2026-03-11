@@ -1,4 +1,14 @@
-import { Warehouse, InventoryItem, TPLProcess, WMSNotification, PatioSlot } from './types';
+import { 
+  Warehouse, 
+  InventoryItem, 
+  TPLProcess, 
+  WMSNotification, 
+  PatioSlot,
+  CustomerPricing,
+  SupplierRebate,
+  SalesChannel,
+  BinLocation
+} from './types';
 
 export const MOCK_WAREHOUSES: Warehouse[] = [
   {
@@ -118,7 +128,45 @@ export const MOCK_INVENTORY: InventoryItem[] = [
     palletId: 'PAL-331', 
     customer: 'HealthPlus' 
   },
+  ...Array.from({ length: 995 }).map((_, i) => ({
+    id: `inv-${i + 6}`,
+    sku: `SKU-${String(i + 6).padStart(4, '0')}`,
+    name: `Industrial Part ${i + 6}`,
+    quantity: Math.floor(Math.random() * 5000) + 100,
+    unit: i % 3 === 0 ? 'pallets' : 'units',
+    location: `Rack ${Math.floor(Math.random() * 5)}-${Math.floor(Math.random() * 8)}`,
+    palletId: `PAL-${Math.floor(Math.random() * 9000) + 1000}`,
+    customer: ['TechCorp', 'GreenFoods', 'AutoParts', 'EcoEnergy', 'Walmart', 'Amazon'][i % 6]
+  }))
 ];
+
+export const MOCK_PRICING: CustomerPricing[] = [
+  { customerId: 'TechCorp', sku: 'SKU-001', basePrice: 15.50, discountedPrice: 12.40, contractId: 'CON-2026-001' },
+  { customerId: 'AutoParts', sku: 'SKU-003', basePrice: 85.00, discountedPrice: 72.25, contractId: 'CON-2026-002' }
+];
+
+export const MOCK_REBATES: SupplierRebate[] = [
+  { supplierId: 'GlobalParts', threshold: 100000, rebatePercentage: 5, currentVolume: 85000, status: 'active' },
+  { supplierId: 'EcoSource', threshold: 50000, rebatePercentage: 3, currentVolume: 52000, status: 'achieved' }
+];
+
+export const MOCK_CHANNELS: SalesChannel[] = [
+  { id: 'ch-1', name: 'Amazon Storefront', type: 'ecommerce', status: 'online' },
+  { id: 'ch-2', name: 'Retail Network - MX', type: 'retail', status: 'online' },
+  { id: 'ch-3', name: 'Wholesale B2B', type: 'wholesale', status: 'online' }
+];
+
+export const MOCK_BINS: BinLocation[] = Array.from({ length: 200 }).map((_, i) => ({
+  id: `BIN-${String(i + 1).padStart(4, '0')}`,
+  zone: (['picking', 'bulk', 'staging', 'returns'][i % 4]) as any,
+  aisle: String(Math.floor(i / 40) + 1).padStart(2, '0'),
+  rack: String(Math.floor((i % 40) / 8) + 1).padStart(2, '0'),
+  level: String((i % 8) + 1),
+  position: String((i % 4) + 1),
+  capacity: 100,
+  currentVolume: Math.floor(Math.random() * 100),
+  sku: i % 5 === 0 ? `SKU-00${(i % 5) + 1}` : undefined
+}));
 
 export const MOCK_TPL_PROCESSES: TPLProcess[] = [
   {
@@ -154,8 +202,32 @@ export const MOCK_TPL_PROCESSES: TPLProcess[] = [
       { id: 's4', label: { en: 'Customer Status', es: 'Estatus Cliente' }, status: 'pending' },
     ],
     documents: ['Customs Invoice.pdf', 'Proof of Delivery.jpg']
-  }
+  },
+  // Generate 48 more shipments for testing scalability
+  ...Array.from({ length: 48 }).map((_, i) => ({
+    id: `tpl-${i + 3}`,
+    truckId: `TRK-2026-${String.fromCharCode(67 + (i % 24))}${i}`,
+    truckType: (i % 2 === 0 ? 'Full Truck' : 'Thorton') as 'Full Truck' | 'Thorton' | '3.5 Van',
+    customer: ['Walmart', 'Amazon', 'Tesla', 'Ford', 'Samsung'][i % 5],
+    origin: 'Laredo, TX',
+    destination: 'Monterrey, NL',
+    appointmentTime: `2026-03-${String(Math.floor(i / 5) + 2).padStart(2, '0')} 10:00`,
+    status: (['collection', 'in-transit-to-wh', 'unloading', 'storage', 'picking', 'loading', 'delivery'][i % 7]) as any,
+    steps: [
+      { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'completed' as const, timestamp: '2026-03-01 08:00' }
+    ],
+    documents: []
+  }))
 ];
+
+export const AI_AGENTS = [
+  { id: 'control-tower', role: 'Control Tower', icon: 'Terminal', color: 'porteo-blue' },
+  { id: 'warehouse-director', role: 'Warehouse Director', icon: 'Warehouse', color: 'porteo-orange' },
+  { id: 'supply-chain-director', role: 'Supply Chain Director', icon: 'TrendingUp', color: 'emerald-500' },
+  { id: 'coo-assistant', role: 'COO Assistant', icon: 'ShieldAlert', color: 'rose-500' },
+  { id: 'assembly-expert', role: 'Assembly Expert', icon: 'Cpu', color: 'indigo-500' },
+  { id: 'cfo', role: 'CFO', icon: 'DollarSign', color: 'amber-500' }
+] as const;
 
 export const MOCK_NOTIFICATIONS: WMSNotification[] = [
   {

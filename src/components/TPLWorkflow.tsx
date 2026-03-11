@@ -98,7 +98,12 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
-      case 'in-progress': return <div className="w-5 h-5 rounded-full border-2 border-porteo-orange border-t-transparent animate-spin" />;
+      case 'in-progress': return (
+        <div className="relative flex items-center justify-center">
+          <div className="w-5 h-5 rounded-full border-2 border-porteo-orange opacity-20" />
+          <div className="absolute w-2 h-2 bg-porteo-orange rounded-full animate-pulse" />
+        </div>
+      );
       case 'rejected': return <AlertCircle className="w-5 h-5 text-rose-500" />;
       case 'pending': return <Circle className="w-5 h-5 text-white/10" />;
       default: return <Circle className="w-5 h-5 text-white/20" />;
@@ -191,7 +196,7 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
             </select>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
           {filteredShipments.length > 0 ? filteredShipments.map((p) => (
             <button
               key={p.id}
@@ -317,22 +322,52 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
                 <div className="flex-1">
                   <h3 className="text-lg font-bold text-white mb-6">{language === 'en' ? 'Shipment Details' : 'Detalles del Envío'}</h3>
                   <div className="space-y-4">
-                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                      <span className="text-xs text-white/40">{language === 'en' ? 'Vehicle Type' : 'Tipo de Vehículo'}</span>
-                      <span className="text-xs font-bold text-white">{selectedProcess.truckType}</span>
-                    </div>
-                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                      <span className="text-xs text-white/40">{language === 'en' ? 'Appointment' : 'Cita'}</span>
-                      <span className="text-xs font-bold text-white">{selectedProcess.appointmentTime || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                      <span className="text-xs text-white/40">{language === 'en' ? 'Origin' : 'Origen'}</span>
-                      <span className="text-xs font-bold text-white">{selectedProcess.origin}</span>
-                    </div>
-                    <div className="flex justify-between p-3 bg-white/5 rounded-xl">
-                      <span className="text-xs text-white/40">{language === 'en' ? 'Destination' : 'Destino'}</span>
-                      <span className="text-xs font-bold text-white">{selectedProcess.destination}</span>
-                    </div>
+                    {selectedProcess.status === 'documentation' ? (
+                      <div className="p-6 bg-porteo-blue/10 border border-porteo-blue/30 rounded-3xl text-center space-y-4">
+                        <div className="w-16 h-16 bg-porteo-blue/20 rounded-full flex items-center justify-center mx-auto text-porteo-blue">
+                          <Upload className="w-8 h-8" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white">{language === 'en' ? 'Final Documentation' : 'Documentación Final'}</h4>
+                          <p className="text-[10px] text-white/40 mt-1">{language === 'en' ? 'Upload signed BOL, photos of cargo, and delivery proof.' : 'Subir BOL firmado, fotos de carga y prueba de entrega.'}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button 
+                            onClick={() => onViewDocuments?.(selectedProcess)}
+                            className="p-3 bg-porteo-blue text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-2"
+                          >
+                            <FileText className="w-3 h-3" />
+                            {language === 'en' ? 'Upload Files' : 'Subir Archivos'}
+                          </button>
+                          <button 
+                            onClick={() => alert(language === 'en' ? 'Opening Camera...' : 'Abriendo Cámara...')}
+                            className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-2"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            {language === 'en' ? 'Take Photo' : 'Tomar Foto'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                          <span className="text-xs text-white/40">{language === 'en' ? 'Vehicle Type' : 'Tipo de Vehículo'}</span>
+                          <span className="text-xs font-bold text-white">{selectedProcess.truckType}</span>
+                        </div>
+                        <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                          <span className="text-xs text-white/40">{language === 'en' ? 'Appointment' : 'Cita'}</span>
+                          <span className="text-xs font-bold text-white">{selectedProcess.appointmentTime || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                          <span className="text-xs text-white/40">{language === 'en' ? 'Origin' : 'Origen'}</span>
+                          <span className="text-xs font-bold text-white">{selectedProcess.origin}</span>
+                        </div>
+                        <div className="flex justify-between p-3 bg-white/5 rounded-xl">
+                          <span className="text-xs text-white/40">{language === 'en' ? 'Destination' : 'Destino'}</span>
+                          <span className="text-xs font-bold text-white">{selectedProcess.destination}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="mt-8 flex gap-4">

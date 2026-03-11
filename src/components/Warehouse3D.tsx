@@ -4,14 +4,16 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Text, Box, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 
-const Rack = ({ position, color = "#444", onSelect, isSelected }: { position: [number, number, number], color?: string, onSelect: () => void, isSelected: boolean }) => {
+const Rack = ({ position, color = "#444", onSelect, isSelected, zone }: { position: [number, number, number], color?: string, onSelect: () => void, isSelected: boolean, zone?: string }) => {
+  const zoneColor = zone === 'Picking' ? '#F27D26' : zone === 'Cold Storage' ? '#00AEEF' : color;
+  
   return (
     <group position={position} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
       {/* Vertical supports */}
-      <Box args={[0.2, 4, 0.2]} position={[-1, 2, -1]}><meshStandardMaterial color={isSelected ? "#F27D26" : color} /></Box>
-      <Box args={[0.2, 4, 0.2]} position={[1, 2, -1]}><meshStandardMaterial color={isSelected ? "#F27D26" : color} /></Box>
-      <Box args={[0.2, 4, 0.2]} position={[-1, 2, 1]}><meshStandardMaterial color={isSelected ? "#F27D26" : color} /></Box>
-      <Box args={[0.2, 4, 0.2]} position={[1, 2, 1]}><meshStandardMaterial color={isSelected ? "#F27D26" : color} /></Box>
+      <Box args={[0.2, 4, 0.2]} position={[-1, 2, -1]}><meshStandardMaterial color={isSelected ? "#F27D26" : zoneColor} /></Box>
+      <Box args={[0.2, 4, 0.2]} position={[1, 2, -1]}><meshStandardMaterial color={isSelected ? "#F27D26" : zoneColor} /></Box>
+      <Box args={[0.2, 4, 0.2]} position={[-1, 2, 1]}><meshStandardMaterial color={isSelected ? "#F27D26" : zoneColor} /></Box>
+      <Box args={[0.2, 4, 0.2]} position={[1, 2, 1]}><meshStandardMaterial color={isSelected ? "#F27D26" : zoneColor} /></Box>
       
       {/* Shelves */}
       {[0.5, 1.5, 2.5, 3.5].map((y) => (
@@ -31,6 +33,19 @@ const Rack = ({ position, color = "#444", onSelect, isSelected }: { position: [n
           </Box>
         </group>
       ))}
+
+      {/* Zone Label */}
+      {zone && (
+        <Text
+          position={[0, 4.5, 0]}
+          fontSize={0.3}
+          color="white"
+          anchorX="center"
+          anchorY="middle"
+        >
+          {zone}
+        </Text>
+      )}
     </group>
   );
 };
@@ -123,6 +138,7 @@ export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateI
               const rackId = `${i}-${j}`;
               const zone = layout.zones?.find(z => z.racks.includes(rackId));
               const isTarget = selectedRack === rackId;
+              const mockZone = (i < 2) ? 'Picking' : (i > 3) ? 'Cold Storage' : 'Standard';
               
               let color = "#444";
               if (isScanning && isTarget) {
@@ -144,6 +160,7 @@ export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateI
                   onSelect={() => setSelectedRack(rackId)}
                   isSelected={isTarget}
                   color={color} 
+                  zone={mockZone}
                 />
               );
             })
