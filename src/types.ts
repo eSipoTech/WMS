@@ -66,7 +66,7 @@ export interface TPLProcess {
 
 export interface WMSNotification {
   id: string;
-  type: 'market' | 'operational' | 'alert';
+  type: 'market' | 'operational' | 'alert' | 'success' | 'info';
   title: { en: string; es: string };
   description: { en: string; es: string };
   actionLabel?: { en: string; es: string };
@@ -87,19 +87,35 @@ export interface BinLocation {
 }
 
 export interface CustomerPricing {
+  id: string;
   customerId: string;
   sku: string;
   basePrice: number;
   discountedPrice: number;
   contractId: string;
+  currency: string;
 }
 
 export interface SupplierRebate {
+  id: string;
   supplierId: string;
   threshold: number;
   rebatePercentage: number;
   currentVolume: number;
   status: 'active' | 'achieved' | 'pending';
+}
+
+export interface Contract {
+  id: string;
+  partyName: string;
+  type: 'customer' | 'supplier' | 'service';
+  startDate: string;
+  endDate: string;
+  status: 'active' | 'expired' | 'pending_renewal' | 'draft';
+  value?: number;
+  currency: string;
+  autoRenew: boolean;
+  documentUrl?: string;
 }
 
 export interface SalesChannel {

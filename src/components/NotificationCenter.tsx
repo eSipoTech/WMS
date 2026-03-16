@@ -10,9 +10,10 @@ interface NotificationCenterProps {
   language: Language;
   notifications: WMSNotification[];
   onAction?: (action: string) => void;
+  addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const NotificationCenter = ({ isOpen, onClose, language, notifications, onAction }: NotificationCenterProps) => {
+export const NotificationCenter = ({ isOpen, onClose, language, notifications, onAction, addNotification }: NotificationCenterProps) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -68,7 +69,7 @@ export const NotificationCenter = ({ isOpen, onClose, language, notifications, o
                           if (onAction) {
                             onAction(n.actionLabel?.en || '');
                           } else {
-                            alert(language === 'en' ? `Action triggered: ${n.actionLabel?.en}` : `Acción activada: ${n.actionLabel?.es}`);
+                            addNotification(language === 'en' ? `Action triggered: ${n.actionLabel?.en}` : `Acción activada: ${n.actionLabel?.es}`, 'info');
                           }
                         }}
                         className="w-full py-2 bg-porteo-orange text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-porteo-orange/80 transition-all flex items-center justify-center gap-2"

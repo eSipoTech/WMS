@@ -27,9 +27,10 @@ import { Type } from '@google/genai';
 interface StrategicResearchProps {
   lang: 'en' | 'es';
   setActiveTab: (tab: string) => void;
+  addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setActiveTab }) => {
+export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setActiveTab, addNotification }) => {
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [complianceStatus, setComplianceStatus] = useState<'validating' | 'ready' | 'idle'>('idle');
@@ -163,12 +164,12 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
   };
 
   const handleApplyOptimization = () => {
-    alert(lang === 'en' ? 'Optimization parameters applied to WMS production environment.' : 'Parámetros de optimización aplicados al entorno de producción del WMS.');
+    addNotification(lang === 'en' ? 'Optimization parameters applied to WMS production environment.' : 'Parámetros de optimización aplicados al entorno de producción del WMS.', 'success');
     setShowSimResult(false);
   };
 
   const handleDownloadAudit = () => {
-    alert(lang === 'en' ? 'Downloading Compliance Audit Report (PDF)...' : 'Descargando Informe de Auditoría de Cumplimiento (PDF)...');
+    addNotification(lang === 'en' ? 'Downloading Compliance Audit Report (PDF)...' : 'Descargando Informe de Auditoría de Cumplimiento (PDF)...', 'operational');
   };
 
   return (

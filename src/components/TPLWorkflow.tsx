@@ -10,9 +10,10 @@ interface TPLWorkflowProps {
   onUpdateStatus?: (shipment: TPLProcess) => void;
   onViewDocuments?: (shipment: TPLProcess) => void;
   onBulkImport?: (data: any[]) => void;
+  addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdateStatus, onViewDocuments, onBulkImport }: TPLWorkflowProps) => {
+export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdateStatus, onViewDocuments, onBulkImport, addNotification }: TPLWorkflowProps) => {
   const workflowSteps = [
     { id: 'collection', icon: <Truck className="w-4 h-4" />, label: { en: 'Collection', es: 'Recolección' } },
     { id: 'in-transit-to-wh', icon: <MapPin className="w-4 h-4" />, label: { en: 'Arrival', es: 'Llegada' } },
@@ -340,7 +341,9 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
                             {language === 'en' ? 'Upload Files' : 'Subir Archivos'}
                           </button>
                           <button 
-                            onClick={() => alert(language === 'en' ? 'Opening Camera...' : 'Abriendo Cámara...')}
+                            onClick={() => {
+                              addNotification(language === 'en' ? 'Opening Camera...' : 'Abriendo Cámara...', 'operational');
+                            }}
                             className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-2"
                           >
                             <RefreshCw className="w-3 h-3" />
@@ -422,7 +425,9 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
                       {language === 'en' ? 'Generate BOL v3.0' : 'Generar Carta Porte v3.0'}
                     </button>
                     <button 
-                      onClick={() => alert(language === 'en' ? 'Opening Compliance Audit...' : 'Abriendo Auditoría de Cumplimiento...')}
+                      onClick={() => {
+                        addNotification(language === 'en' ? 'Opening Compliance Audit...' : 'Abriendo Auditoría de Cumplimiento...', 'operational');
+                      }}
                       className="w-full p-3 bg-white/5 border border-white/10 text-white/60 rounded-xl text-[10px] font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                     >
                       <ShieldCheck className="w-3 h-3" />
@@ -602,7 +607,7 @@ export const TPLWorkflow = ({ language, shipments = MOCK_TPL_PROCESSES, onUpdate
                     onChange={(e) => {
                       const files = e.target.files;
                       if (files && files.length > 0) {
-                        alert(`Processing ${files.length} files... AI is extracting shipment data.`);
+                        addNotification(`Processing ${files.length} files... AI is extracting shipment data.`, 'operational');
                         // Simulate data extraction
                         const newShipments = Array.from({ length: 5 }).map((_, i) => ({
                           id: `IMP-${Math.floor(Math.random() * 10000)}`,

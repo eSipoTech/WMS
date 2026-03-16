@@ -1,14 +1,23 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { DollarSign, FileText, TrendingUp, Users, Search, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck } from 'lucide-react';
-import { MOCK_PRICING, MOCK_REBATES } from '../constants';
+import { DollarSign, FileText, TrendingUp, Users, Search, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck, Calendar, AlertCircle, ExternalLink, Plus } from 'lucide-react';
+import { MOCK_PRICING, MOCK_REBATES, MOCK_CONTRACTS } from '../constants';
+import { Contract } from '../types';
 
 interface CommercialManagementProps {
   language: 'en' | 'es';
+  onViewContract?: (contract: Contract) => void;
+  onNewContract?: () => void;
 }
 
-export const CommercialManagement = ({ language }: CommercialManagementProps) => {
+export const CommercialManagement = ({ language, onViewContract, onNewContract }: CommercialManagementProps) => {
   const [activeSubTab, setActiveSubTab] = useState<'pricing' | 'rebates' | 'contracts'>('pricing');
+  const [contractSearch, setContractSearch] = useState('');
+
+  const filteredContracts = MOCK_CONTRACTS.filter(c => 
+    c.partyName.toLowerCase().includes(contractSearch.toLowerCase()) ||
+    c.id.toLowerCase().includes(contractSearch.toLowerCase())
+  );
 
   return (
     <div className="h-full flex flex-col gap-6">
@@ -134,19 +143,104 @@ export const CommercialManagement = ({ language }: CommercialManagementProps) =>
         )}
 
         {activeSubTab === 'contracts' && (
-          <div className="p-8 flex flex-col items-center justify-center text-center space-y-4">
-            <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center text-white/20">
-              <ShieldCheck className="w-10 h-10" />
+          <div className="p-8 space-y-6 flex flex-col h-full">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Contract Lifecycle Management' : 'Gestión del Ciclo de Vida de Contratos'}</h3>
+                <p className="text-sm text-white/40 mt-1">{language === 'en' ? 'Monitor and manage active agreements' : 'Monitorear y gestionar acuerdos activos'}</p>
+              </div>
+              <div className="flex gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <input 
+                    type="text"
+                    value={contractSearch}
+                    onChange={(e) => setContractSearch(e.target.value)}
+                    placeholder={language === 'en' ? 'Search contracts...' : 'Buscar contratos...'}
+                    className="bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-xs text-white outline-none focus:border-porteo-orange/50"
+                  />
+                </div>
+                <button 
+                  onClick={onNewContract}
+                  className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  {language === 'en' ? 'New Contract' : 'Nuevo Contrato'}
+                </button>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Contract Lifecycle Management' : 'Gestión del Ciclo de Vida de Contratos'}</h3>
-            <p className="text-white/40 max-w-md">
-              {language === 'en' 
-                ? 'Centralized repository for all customer and supplier contracts. Automated renewal alerts and compliance tracking.' 
-                : 'Repositorio centralizado para todos los contratos de clientes y proveedores. Alertas de renovación automatizadas y seguimiento de cumplimiento.'}
-            </p>
-            <button className="px-6 py-3 bg-porteo-orange text-white rounded-2xl font-bold shadow-lg shadow-porteo-orange/20">
-              {language === 'en' ? 'Open Contract Repository' : 'Abrir Repositorio de Contratos'}
-            </button>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 overflow-y-auto pr-2">
+              {filteredContracts.map((contract) => (
+                <motion.div 
+                  layout
+                  key={contract.id}
+                  className="p-6 bg-white/5 border border-white/10 rounded-3xl space-y-4 hover:border-porteo-orange/30 transition-all group"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-white/40 group-hover:text-porteo-orange transition-colors">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className={`px-2 py-1 rounded text-[8px] font-bold uppercase tracking-widest ${
+                      contract.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' :
+                      contract.status === 'pending_renewal' ? 'bg-amber-500/10 text-amber-500' :
+                      'bg-white/10 text-white/40'
+                    }`}>
+                      {contract.status.replace('_', ' ')}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-lg font-bold text-white truncate">{contract.partyName}</h4>
+                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{contract.type} contract</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{language === 'en' ? 'Start Date' : 'Fecha Inicio'}</p>
+                      <div className="flex items-center gap-2 text-xs text-white">
+                        <Calendar className="w-3 h-3 text-white/20" />
+                        {contract.startDate}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{language === 'en' ? 'End Date' : 'Fecha Fin'}</p>
+                      <div className="flex items-center gap-2 text-xs text-white">
+                        <Calendar className="w-3 h-3 text-white/20" />
+                        {contract.endDate}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{language === 'en' ? 'Contract Value' : 'Valor Contrato'}</p>
+                      <p className="text-sm font-bold text-white">{contract.value ? `${contract.currency} ${contract.value.toLocaleString()}` : 'N/A'}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => onViewContract?.(contract)}
+                        className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white hover:bg-white/10 transition-colors"
+                      >
+                        {language === 'en' ? 'Manage' : 'Gestionar'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {contract.status === 'pending_renewal' && (
+                    <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                      <AlertCircle className="w-4 h-4 text-amber-500" />
+                      <p className="text-[10px] text-amber-500 font-bold">
+                        {language === 'en' ? 'Renewal required within 30 days' : 'Renovación requerida en 30 días'}
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </div>
           </div>
         )}
       </div>

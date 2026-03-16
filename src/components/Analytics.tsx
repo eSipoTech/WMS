@@ -58,6 +58,7 @@ interface AnalyticsProps {
     temp?: string;
   };
   exportReport: (title: string, data: any) => void;
+  addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
 interface CustomChart {
@@ -68,7 +69,7 @@ interface CustomChart {
   color: string;
 }
 
-export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieData, colors, statsOverride, exportReport }) => {
+export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieData, colors, statsOverride, exportReport, addNotification }) => {
   const [drillDownStat, setDrillDownStat] = useState<string | null>(null);
   const [drillDownView, setDrillDownView] = useState<'current' | 'average' | 'peak' | 'trend'>('trend');
   const [aiInsights, setAiInsights] = useState<{ observations: string[], recommendations: string[] }>({ observations: [], recommendations: [] });
@@ -94,19 +95,13 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
     { id: 'occupancy', label: lang === 'en' ? 'Occupancy' : 'Ocupación', value: statsOverride?.occupancy || '84%', trend: '+2%', icon: <Layers />, color: 'porteo-blue' },
     { id: 'trucks', label: lang === 'en' ? 'Active Trucks' : 'Camiones Activos', value: statsOverride?.trucks || '24', trend: '-5%', icon: <Truck />, color: 'porteo-blue-light' },
     { id: 'temp', label: lang === 'en' ? 'Avg Temp' : 'Temp Promedio', value: statsOverride?.temp || '18°C', trend: 'Stable', icon: <Thermometer />, color: 'emerald-500' },
-  ];
-
-  // Fetch AI Insights when drillDownStat changes
+  ];  // Fetch AI Insights when drillDownStat or drillDownView changes
   React.useEffect(() => {
     if (drillDownStat) {
       setIsLoadingInsights(true);
-      const metricData = drillDownStat === 'financial' ? financialData : 
-                        drillDownStat === 'space' ? pieData : 
-                        drillDownStat === 'fulfillment' ? [{ name: 'Mon', accuracy: 98.2 }, { name: 'Tue', accuracy: 97.8 }, { name: 'Wed', accuracy: 99.1 }] :
-                        drillDownStat === 'productivity' ? [{ name: '08:00', lines: 120 }, { name: '10:00', lines: 240 }] :
-                        stats.find(s => s.id === drillDownStat);
+      const metricData = getDrillDownData(drillDownStat);
 
-      getAnalyticsInsights(drillDownStat, metricData, lang)
+      getAnalyticsInsights(drillDownStat, { ...metricData, view: drillDownView }, lang)
         .then(insights => {
           setAiInsights(insights);
           setIsLoadingInsights(false);
@@ -127,7 +122,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
           });
         });
     }
-  }, [drillDownStat, lang]);
+  }, [drillDownStat, drillDownView, lang]);
 
   const getDrillDownTitle = (id: string) => {
     const mapping: Record<string, string> = {
@@ -157,7 +152,28 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
   const getDrillDownData = (id: string) => {
     if (id === 'financial') return { data: filteredFinancialData, keys: ['revenue', 'cost', 'profit'], colors: ['#F27D26', '#004A99', '#10b981'] };
     if (id === 'space' || id === 'occupancy') return { data: pieData, keys: ['value'], colors: ['#F27D26'] };
-    if (id === 'pallets') return { data: filteredFinancialData.map(d => ({ name: d.name, value: d.pallets })), keys: ['value'], colors: ['#F27D26'] };
+    
+    // Generate more granular data for drill down (daily for the last 30 days)
+    const generateDailyData = (baseValue: number, variance: number) => {
+      const days = lang === 'en' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+      return Array.from({ length: 30 }).map((_, i) => ({
+        name: `Day ${i + 1}`,
+        value: baseValue + (Math.random() - 0.5) * variance,
+        average: baseValue,
+        peak: baseValue + variance * 0.8
+      }));
+    };
+
+    if (id === 'pallets') {
+      const base = parseInt(statsOverride?.pallets?.replace(/,/g, '') || '12450');
+      const dailyData = generateDailyData(base, 2000);
+      
+      if (drillDownView === 'average') return { data: dailyData, keys: ['average'], colors: ['#00AEEF'] };
+      if (drillDownView === 'peak') return { data: dailyData, keys: ['peak'], colors: ['#F27D26'] };
+      if (drillDownView === 'current') return { data: dailyData, keys: ['value'], colors: ['#10b981'] };
+      
+      return { data: filteredFinancialData.map(d => ({ name: d.name, value: d.pallets })), keys: ['value'], colors: ['#F27D26'] };
+    }
     
     if (id === 'fulfillment') return { data: [
       { name: 'Mon', accuracy: 98.2 },
@@ -225,7 +241,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
         };
         setCustomCharts([chart, ...customCharts]);
         setAiPrompt('');
-        alert(lang === 'en' ? `AI Expert created: ${config.title}` : `El experto de IA creó: ${config.title}`);
+        addNotification(lang === 'en' ? `AI Expert created: ${config.title}` : `El experto de IA creó: ${config.title}`, 'success');
       }
     } catch (error) {
       console.error("AI Graph Creation failed:", error);
@@ -520,8 +536,10 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
           <button 
             onClick={() => {
               const msg = lang === 'en' ? 'Running Slotting Optimization Algorithm...' : 'Ejecutando Algoritmo de Optimización de Slotting...';
-              alert(msg);
-              setTimeout(() => alert(lang === 'en' ? 'Optimization Complete. 34 movements recommended.' : 'Optimización Completa. 34 movimientos recomendados.'), 2000);
+              addNotification(msg, 'info');
+              setTimeout(() => {
+                addNotification(lang === 'en' ? 'Optimization Complete. 34 movements recommended.' : 'Optimización Completa. 34 movimientos recomendados.', 'success');
+              }, 2000);
             }}
             className="w-full mt-6 py-3 bg-porteo-orange/10 border border-porteo-orange/20 rounded-xl text-xs font-bold text-porteo-orange hover:bg-porteo-orange hover:text-white transition-all shadow-lg shadow-porteo-orange/5"
           >
@@ -759,7 +777,9 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                         aiInsights.recommendations.map((rec, i) => (
                           <button 
                             key={i}
-                            onClick={() => alert(`${lang === 'en' ? 'Executing' : 'Ejecutando'}: ${rec}`)}
+                            onClick={() => {
+                            addNotification(`${lang === 'en' ? 'Executing' : 'Ejecutando'}: ${rec}`, 'operational');
+                          }}
                             className="w-full p-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold text-sm hover:bg-white/10 transition-all flex justify-between items-center group"
                           >
                             <span className="text-left">{rec}</span>
@@ -769,14 +789,18 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                       )}
                       <div className="pt-4 flex gap-4">
                         <button 
-                          onClick={() => alert(lang === 'en' ? 'Generating PDF Report...' : 'Generando Reporte PDF...')}
+                          onClick={() => {
+                            addNotification(lang === 'en' ? 'Generating PDF Report...' : 'Generando Reporte PDF...', 'operational');
+                          }}
                           className="flex-1 p-4 bg-porteo-orange text-white rounded-2xl font-bold text-sm hover:bg-porteo-orange/80 transition-all flex justify-center items-center gap-2"
                         >
                           <Download className="w-4 h-4" />
                           <span>{lang === 'en' ? 'Generate Report' : 'Generar Reporte'}</span>
                         </button>
                         <button 
-                          onClick={() => alert(lang === 'en' ? 'Scheduling AI Optimization...' : 'Programando Optimización IA...')}
+                          onClick={() => {
+                            addNotification(lang === 'en' ? 'Scheduling AI Optimization...' : 'Programando Optimización IA...', 'operational');
+                          }}
                           className="flex-1 p-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold text-sm hover:bg-white/10 transition-all flex justify-center items-center gap-2"
                         >
                           <Zap className="w-4 h-4 text-porteo-blue" />

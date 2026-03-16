@@ -19,14 +19,17 @@ import {
   ArrowDownLeft,
   Layers,
   Map as MapIcon,
+  MapPin,
   Warehouse as WarehouseIcon,
   DollarSign,
   Cpu,
   Zap,
   Info,
   X,
+  Layout,
   ShieldAlert,
   ShieldCheck,
+  CheckCircle2,
   Filter,
   Download,
   Upload,
@@ -39,7 +42,10 @@ import {
   Clock,
   Globe2,
   LogOut,
-  Bot
+  Bot,
+  Database,
+  BrainCircuit,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -55,6 +61,7 @@ import {
   PieChart,
   Pie
 } from 'recharts';
+import * as XLSX from 'xlsx';
 import { Warehouse3D } from './components/Warehouse3D';
 import { AIAssistant } from './components/AIAssistant';
 import { TPLWorkflow } from './components/TPLWorkflow';
@@ -67,9 +74,10 @@ import { PatioManagement } from './components/PatioManagement';
 import { AssemblyLine } from './components/AssemblyLine';
 import { Analytics } from './components/Analytics';
 import { Financials } from './components/Financials';
-import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification } from './types';
+import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification, Contract } from './types';
 import { MOCK_WAREHOUSES, MOCK_INVENTORY, MOCK_TPL_PROCESSES, PORTEO_COLORS, MOCK_NOTIFICATIONS } from './constants';
 import { getMarketResearch } from './services/geminiService';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import ReactMarkdown from 'react-markdown';
 
 const FINANCIAL_DATA = [
@@ -96,19 +104,287 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('control-tower');
   const [isAiHubOpen, setIsAiHubOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
-  const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse>(warehouses[0]);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(warehouses[0] || null);
 
   // Ensure selected warehouse matches market
   useEffect(() => {
     const marketWarehouses = warehouses.filter(w => w.market === market);
-    if (marketWarehouses.length > 0 && selectedWarehouse.market !== market) {
-      setSelectedWarehouse(marketWarehouses[0]);
+    if (marketWarehouses.length > 0) {
+      if (!selectedWarehouse || selectedWarehouse.market !== market) {
+        setSelectedWarehouse(marketWarehouses[0]);
+      }
+    } else {
+      setSelectedWarehouse(null);
     }
-  }, [market, warehouses, selectedWarehouse.market]);
+  }, [market, warehouses, selectedWarehouse?.market]);
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<WMSNotification[]>(MOCK_NOTIFICATIONS);
   
+  const [isImporting, setIsImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<{
+    fileName: string;
+    sheets: { name: string; data: any[] }[];
+    activeSheetIndex: number;
+  } | null>(null);
+  const [importMapping, setImportMapping] = useState<Record<string, string>>({});
+  const [importTargetType, setImportTargetType] = useState<'inventory' | 'warehouse' | 'truck'>('inventory');
+  const [importConfidence, setImportConfidence] = useState(0);
+
+  const handleGlobalDataImport = (file: File) => {
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const sheets = workbook.SheetNames.map(name => {
+          const sheet = workbook.Sheets[name];
+          // Try to find the actual header row if there's metadata at the top
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+          
+          if (jsonData.length === 0) return { name, data: [] };
+
+          // Find the first row that looks like a header (has multiple non-empty cells)
+          let headerRowIndex = 0;
+          for (let i = 0; i < Math.min(jsonData.length, 10); i++) {
+            const row = jsonData[i];
+            const filledCells = row.filter(cell => cell !== null && cell !== undefined && cell !== '').length;
+            if (filledCells > 2) {
+              headerRowIndex = i;
+              break;
+            }
+          }
+
+          // Re-parse with the detected header row
+          const finalData = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
+          return { name, data: finalData };
+        }).filter(s => s.data && s.data.length > 0);
+
+        if (sheets.length === 0) {
+          addNotification(lang === 'en' ? 'No valid data found in file.' : 'No se encontraron datos válidos en el archivo.', 'alert');
+          setIsImporting(false);
+          return;
+        }
+
+        setImportPreview({
+          fileName: file.name,
+          sheets,
+          activeSheetIndex: 0
+        });
+        
+        // Auto-detect type based on sheet names or content
+        const firstSheet = sheets[0];
+        const firstRow = firstSheet.data[0] || {};
+        const keys = Object.keys(firstRow).map(k => k.toLowerCase());
+        
+        // Smarter detection
+        const isInventory = keys.some(k => k.includes('sku') || k.includes('part') || k.includes('item') || k.includes('inventario') || k.includes('qty') || k.includes('cant'));
+        const isWarehouse = keys.some(k => k.includes('warehouse') || k.includes('almacen') || k.includes('plant') || k.includes('ubicacion') || k.includes('capacity'));
+        const isTruck = keys.some(k => k.includes('truck') || k.includes('driver') || k.includes('plate') || k.includes('carrier') || k.includes('camion') || k.includes('chofer') || k.includes('placa'));
+
+        if (isTruck) {
+          setImportTargetType('truck');
+        } else if (isWarehouse) {
+          setImportTargetType('warehouse');
+        } else {
+          setImportTargetType('inventory'); // Default to inventory
+        }
+
+        setActiveModal('import-mapping');
+      } catch (err) {
+        console.error('Error reading file:', err);
+        addNotification(lang === 'en' ? 'Error reading file.' : 'Error al leer el archivo.', 'alert');
+      } finally {
+        setIsImporting(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Optimized Auto-mapping logic
+  useEffect(() => {
+    if (importPreview) {
+      const activeSheet = importPreview?.sheets?.[importPreview?.activeSheetIndex || 0];
+      const firstRow = activeSheet?.data?.[0] || {};
+      const columns = Object.keys(firstRow);
+      const newMapping: Record<string, string> = {};
+      
+      const targetFields = importTargetType === 'inventory' 
+        ? ['sku', 'name', 'quantity', 'unit', 'location', 'palletId', 'customer', 'brand', 'category', 'oemNumber']
+        : importTargetType === 'warehouse'
+        ? ['name', 'location', 'market', 'capacity']
+        : ['id', 'carrier', 'type', 'driver', 'status', 'dock', 'eta'];
+        
+      const fieldKeywords: Record<string, string[]> = {
+        sku: ['sku', 'code', 'codigo', 'part', 'parte', 'id', 'referencia', 'ref', 'item code'],
+        name: ['name', 'nombre', 'description', 'descripcion', 'item', 'product', 'articulo', 'producto', 'desc'],
+        quantity: ['quantity', 'cantidad', 'stock', 'qty', 'amount', 'unidades', 'piezas', 'count'],
+        unit: ['unit', 'unidad', 'uom', 'medida', 'um'],
+        location: ['location', 'ubicacion', 'bin', 'slot', 'posicion', 'pasillo', 'rack'],
+        palletId: ['pallet', 'tarima', 'lpn', 'license', 'huella', 'contenedor', 'pallet id'],
+        customer: ['customer', 'cliente', 'owner', 'client', 'propietario', 'business'],
+        brand: ['brand', 'marca', 'manufacturer', 'fabricante'],
+        category: ['category', 'categoria', 'family', 'familia', 'group', 'grupo'],
+        oemNumber: ['oem', 'original', 'num_oem', 'oem number'],
+        market: ['market', 'mercado', 'country', 'pais', 'region', 'location'],
+        capacity: ['capacity', 'capacidad', 'size', 'volumen', 'm2', 'sqm', 'max'],
+        id: ['id', 'truck id', 'unit id', 'economico', 'numero'],
+        carrier: ['carrier', 'transportista', 'linea', 'empresa', 'company'],
+        type: ['type', 'tipo', 'vehicle', 'vehiculo', 'size'],
+        driver: ['driver', 'chofer', 'conductor', 'operator', 'operador'],
+        status: ['status', 'estado', 'estatus', 'condition'],
+        dock: ['dock', 'muelle', 'andén', 'gate', 'puerta'],
+        eta: ['eta', 'arrival', 'llegada', 'time', 'hora']
+      };
+
+      let matchedCount = 0;
+      targetFields.forEach(field => {
+        const keywords = fieldKeywords[field] || [field];
+        // Try exact match first
+        let match = columns.find(col => keywords.some(kw => col.toLowerCase() === kw.toLowerCase()));
+        
+        // Then try partial match
+        if (!match) {
+          match = columns.find(col => keywords.some(kw => col.toLowerCase().includes(kw.toLowerCase())));
+        }
+
+        if (match) {
+          newMapping[field] = match;
+          matchedCount++;
+        }
+      });
+
+      setImportMapping(newMapping);
+      setImportConfidence(Math.round((matchedCount / targetFields.length) * 100));
+    }
+  }, [importPreview?.activeSheetIndex, importTargetType]);
+
+  const executeMappedImport = async () => {
+    if (!importPreview) return;
+    
+    setIsProcessing(true);
+    // Small delay to show loading state and let UI update
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    try {
+      const activeSheet = importPreview?.sheets?.[importPreview?.activeSheetIndex || 0];
+      const data = activeSheet?.data || [];
+      
+      if (importTargetType === 'inventory') {
+        const newInventory: InventoryItem[] = data.map((row: any, idx) => {
+          const getVal = (field: string) => {
+            const col = importMapping[field];
+            return col ? row[col] : undefined;
+          };
+
+          return {
+            id: `inv-mapped-${Date.now()}-${idx}`,
+            sku: String(getVal('sku') || `SKU-${idx}`),
+            name: String(getVal('name') || `Item ${idx}`),
+            quantity: parseFloat(String(getVal('quantity'))) || 0,
+            unit: String(getVal('unit') || 'units'),
+            location: String(getVal('location') || 'Unassigned'),
+            palletId: String(getVal('palletId') || `PAL-${idx}`),
+            customer: String(getVal('customer') || 'Unknown'),
+            brand: String(getVal('brand') || ''),
+            category: (String(getVal('category') || 'Other') as 'Engine' | 'Brakes' | 'Suspension' | 'Electrical' | 'Body' | 'Other'),
+            oemNumber: String(getVal('oemNumber') || '')
+          };
+        });
+        
+        setInventoryItems(prev => [...prev, ...newInventory]);
+        addNotification(lang === 'en' ? `Imported ${newInventory.length} items.` : `Importados ${newInventory.length} artículos.`, 'success');
+        
+        // If no warehouse is selected, try to select the first one or create a default one
+        if (!selectedWarehouse) {
+          if (warehouses.length > 0) {
+            setSelectedWarehouse(warehouses[0]);
+          } else {
+            // Create a default warehouse if none exists to allow viewing inventory
+            const defaultWH: Warehouse = {
+              id: 'wh-default',
+              name: 'Default Warehouse',
+              location: 'Main Facility',
+              market: market,
+              capacity: 100000,
+              currentOccupancy: 0,
+              temperature: 20,
+              status: 'optimal',
+              layout: { racks: { rows: 5, cols: 8 }, docks: 4, zones: [] }
+            };
+            setWarehouses([defaultWH]);
+            setSelectedWarehouse(defaultWH);
+            addNotification(lang === 'en' ? 'Created default warehouse for imported inventory.' : 'Se creó un almacén predeterminado para el inventario importado.', 'info');
+          }
+        }
+      } else if (importTargetType === 'warehouse') {
+        const newWarehouses: Warehouse[] = data.map((row: any, idx) => {
+          const getVal = (field: string) => {
+            const col = importMapping[field];
+            return col ? row[col] : undefined;
+          };
+
+          return {
+            id: `wh-mapped-${Date.now()}-${idx}`,
+            name: String(getVal('name') || `Warehouse ${idx}`),
+            location: String(getVal('location') || 'Unknown'),
+            market: (String(getVal('market') || '').toUpperCase().includes('MEX') ? 'MEXICO' : 'USA') as Market,
+            capacity: parseInt(String(getVal('capacity'))) || 50000,
+            currentOccupancy: 0,
+            temperature: 20,
+            status: 'optimal',
+            layout: {
+              racks: { rows: 5, cols: 8 },
+              docks: 4,
+              zones: []
+            }
+          };
+        });
+        
+        setWarehouses(prev => {
+          const updated = [...prev, ...newWarehouses];
+          if (!selectedWarehouse && updated.length > 0) {
+            setSelectedWarehouse(updated[0]);
+          }
+          return updated;
+        });
+        addNotification(lang === 'en' ? `Imported ${newWarehouses.length} warehouses.` : `Importados ${newWarehouses.length} almacenes.`, 'success');
+      } else if (importTargetType === 'truck') {
+        const newTrucks = data.map((row: any, idx) => {
+          const getVal = (field: string) => {
+            const col = importMapping[field];
+            return col ? row[col] : undefined;
+          };
+
+          return {
+            id: String(getVal('id') || `TRK-IMP-${idx}`),
+            carrier: String(getVal('carrier') || 'Unknown'),
+            type: String(getVal('type') || 'Full Truck'),
+            driver: String(getVal('driver') || 'Unknown'),
+            status: String(getVal('status') || 'Waiting'),
+            dock: String(getVal('dock') || '-'),
+            eta: String(getVal('eta') || '00:00'),
+            idling: Math.random() > 0.5
+          };
+        });
+        
+        setTrucks(prev => [...prev, ...newTrucks]);
+        addNotification(lang === 'en' ? `Imported ${newTrucks.length} trucks.` : `Importados ${newTrucks.length} camiones.`, 'success');
+      }
+      
+      setActiveModal('import-success');
+      setImportPreview(null);
+      setImportMapping({});
+    } catch (error) {
+      console.error('Import error:', error);
+      addNotification(lang === 'en' ? 'Error during import execution.' : 'Error durante la ejecución de la importación.', 'alert');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [drillDownStat, setDrillDownStat] = useState<string | null>(null);
@@ -124,7 +400,7 @@ export default function App() {
   const [optimizationLogs, setOptimizationLogs] = useState<{id: string, msg: string, time: string}[]>([]);
   const [marketInsights, setMarketInsights] = useState<string>('');
   
-  const addNotification = (msg: string, type: 'market' | 'operational' | 'alert' = 'operational') => {
+  const addNotification = (msg: string, type: 'market' | 'operational' | 'alert' | 'success' | 'info' = 'operational') => {
     const newNotif: WMSNotification = {
       id: Math.random().toString(36).substr(2, 9),
       type,
@@ -141,6 +417,11 @@ export default function App() {
 
   // Operational State
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(MOCK_INVENTORY);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('all');
+  const [inventoryLocationFilter, setInventoryLocationFilter] = useState('all');
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const itemsPerPage = 25;
   const [tplProcesses, setTplProcesses] = useState<TPLProcess[]>(MOCK_TPL_PROCESSES);
   const [selectedTplShipment, setSelectedTplShipment] = useState<TPLProcess | null>(null);
   const [trucks, setTrucks] = useState([
@@ -238,6 +519,36 @@ export default function App() {
     { id: 'TASK-06', task: 'Consolidate Partial Pallets', priority: 'Low', impact: '+18% Capacity', desc: 'Multiple partial pallets of SKU-992 are scattered. Consolidating them will free up 4 rack positions.' },
     { id: 'TASK-07', task: 'Pre-stage High Priority Shipments', priority: 'High', impact: '-20m Lead Time', desc: 'Upcoming shipments for Customer X are high priority. Pre-staging them in Zone S will expedite loading.' }
   ]);
+  // Update AI Tasks dynamically based on data
+  useEffect(() => {
+    if (selectedWarehouse) {
+      const occupancy = (selectedWarehouse.currentOccupancy / selectedWarehouse.capacity) * 100;
+      const newTasks = [...aiTasks];
+      
+      if (occupancy > 90) {
+        newTasks[0] = { 
+          id: 'TASK-01', 
+          task: lang === 'en' ? 'Critical Space Optimization' : 'Optimización Crítica de Espacio', 
+          priority: 'High', 
+          impact: '+12% Capacity', 
+          desc: lang === 'en' ? `Warehouse is at ${occupancy.toFixed(1)}% capacity. AI recommends immediate consolidation of partial pallets in Zone B.` : `El almacén está al ${occupancy.toFixed(1)}% de capacidad. La IA recomienda la consolidación inmediata de pallets parciales en la Zona B.` 
+        };
+      }
+      
+      const lowStockItems = inventoryItems.filter(i => i.quantity < 50);
+      if (lowStockItems.length > 0) {
+        newTasks[1] = {
+          id: 'TASK-02',
+          task: lang === 'en' ? `Restock ${lowStockItems.length} Low Items` : `Reabastecer ${lowStockItems.length} Artículos Bajos`,
+          priority: 'Medium',
+          impact: 'Avoid OOS',
+          desc: lang === 'en' ? `Detected ${lowStockItems.length} items with stock below safety threshold. Recommend generating replenishment orders.` : `Se detectaron ${lowStockItems.length} artículos con stock por debajo del umbral de seguridad. Se recomienda generar órdenes de reabastecimiento.`
+        };
+      }
+
+      setAiTasks(newTasks);
+    }
+  }, [selectedWarehouse, inventoryItems.length, lang]);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [cfoQuery, setCfoQuery] = useState('');
   const [cfoChat, setCfoChat] = useState<{role: 'user' | 'ai', content: string}[]>([]);
@@ -248,6 +559,9 @@ export default function App() {
     { name: 'FedEx API', status: 'connected' }
   ]);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
+  const [isSyncingSystems, setIsSyncingSystems] = useState(false);
+  const [isInventoryCompact, setIsInventoryCompact] = useState(false);
+  const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [selectedRackDetails, setSelectedRackDetails] = useState<any>(null);
   const [external3DAction, setExternal3DAction] = useState<{ type: 'audit' | 'relocate', rackId: string, timestamp: number } | null>(null);
   const [selectedZone, setSelectedZone] = useState<any>(null);
@@ -286,7 +600,25 @@ export default function App() {
   const [selectedHub, setSelectedHub] = useState<any>(null);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [isProtocolVerified, setIsProtocolVerified] = useState(false);
-  const [isSyncingSystems, setIsSyncingSystems] = useState(false);
+  const [newLocation, setNewLocation] = useState('');
+  const [isMovingPallet, setIsMovingPallet] = useState(false);
+
+  const handleMovePallet = () => {
+    if (!selectedInventoryItem || !newLocation) return;
+    
+    setIsMovingPallet(true);
+    setTimeout(() => {
+      setInventoryItems(prev => prev.map(item => 
+        item.id === selectedInventoryItem.id ? { ...item, location: newLocation } : item
+      ));
+      addNotification(lang === 'en' 
+        ? `Pallet ${selectedInventoryItem.palletId} moved to ${newLocation}` 
+        : `Pallet ${selectedInventoryItem.palletId} movido a ${newLocation}`, 'success');
+      setIsMovingPallet(false);
+      setActiveModal(null);
+      setNewLocation('');
+    }, 1500);
+  };
   const [showLiveMap, setShowLiveMap] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [filterCustomer, setFilterCustomer] = useState('');
@@ -329,7 +661,7 @@ export default function App() {
     link.href = jsonString;
     link.download = `${title.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
     link.click();
-    alert(lang === 'en' ? 'Report exported successfully!' : '¡Reporte exportado con éxito!');
+    addNotification(lang === 'en' ? 'Report exported successfully!' : '¡Reporte exportado con éxito!', 'operational');
   };
 
   useEffect(() => {
@@ -376,7 +708,7 @@ export default function App() {
     const interval = setInterval(() => {
       const operationalData = {
         activeShipments: tplProcesses.length,
-        warehouseOccupancy: selectedWarehouse.currentOccupancy,
+        warehouseOccupancy: selectedWarehouse?.currentOccupancy || 0,
         systemHealth: 'optimal'
       };
       import('./services/geminiService').then(m => {
@@ -480,7 +812,7 @@ export default function App() {
       items: [
         { id: 'financials', icon: <DollarSign className="w-4 h-4" />, label: t.financials },
         { id: 'personnel', icon: <Users className="w-4 h-4" />, label: t.personnel },
-        { id: 'admin', icon: <Settings className="w-4 h-4" />, label: lang === 'en' ? 'Admin / Layout' : 'Admin / Diseño' },
+        { id: 'admin', icon: <Settings className="w-4 h-4" />, label: lang === 'en' ? 'System Admin' : 'Admin del Sistema' },
       ]
     }
   ];
@@ -499,12 +831,29 @@ export default function App() {
   ];
 
   const filteredInventory = useMemo(() => {
-    return inventoryItems.filter(item => 
-      item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.customer.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [searchQuery, inventoryItems]);
+    return inventoryItems.filter(item => {
+      const matchesSearch = 
+        item.sku.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+        item.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+        item.customer.toLowerCase().includes(inventorySearch.toLowerCase());
+      
+      const matchesCategory = inventoryCategoryFilter === 'all' || item.category === inventoryCategoryFilter;
+      const matchesLocation = inventoryLocationFilter === 'all' || item.location === inventoryLocationFilter;
+      
+      return matchesSearch && matchesCategory && matchesLocation;
+    });
+  }, [inventorySearch, inventoryCategoryFilter, inventoryLocationFilter, inventoryItems]);
+
+  const paginatedInventory = useMemo(() => {
+    const start = (inventoryPage - 1) * itemsPerPage;
+    return filteredInventory.slice(start, start + itemsPerPage);
+  }, [filteredInventory, inventoryPage]);
+
+  const totalInventoryPages = Math.ceil(filteredInventory.length / itemsPerPage);
+
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [inventorySearch, inventoryCategoryFilter, inventoryLocationFilter]);
 
   return (
     <div className="flex h-screen bg-[#050505] font-sans selection:bg-porteo-orange/30 overflow-hidden">
@@ -602,15 +951,19 @@ export default function App() {
               <WarehouseIcon className="w-4 h-4 text-porteo-orange" />
               <select 
                 className="bg-transparent border-none text-sm text-white focus:ring-0 cursor-pointer"
-                value={selectedWarehouse.id}
+                value={selectedWarehouse?.id || ''}
                 onChange={(e) => {
                   const wh = warehouses.find(w => w.id === e.target.value);
                   if (wh) setSelectedWarehouse(wh);
                 }}
               >
-                {filteredWarehouses.map(wh => (
-                  <option key={wh.id} value={wh.id} className="bg-slate-900">{wh.name}</option>
-                ))}
+                {filteredWarehouses.length > 0 ? (
+                  filteredWarehouses.map(wh => (
+                    <option key={wh.id} value={wh.id} className="bg-slate-900">{wh.name}</option>
+                  ))
+                ) : (
+                  <option value="" className="bg-slate-900">{lang === 'en' ? 'No Warehouses' : 'Sin Almacenes'}</option>
+                )}
               </select>
             </div>
             
@@ -679,8 +1032,56 @@ export default function App() {
 
         {/* Dynamic Content Area */}
         <div className="flex-1 overflow-y-auto p-8 scrollbar-hide">
+          {!selectedWarehouse && activeTab !== 'admin' && activeTab !== 'intelligence-agents' && (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-6">
+              <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
+                <WarehouseIcon className="w-12 h-12 text-white/20" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-white">{lang === 'en' ? 'No Data Available' : 'No hay datos disponibles'}</h3>
+                <p className="text-white/40 mt-2 max-w-md">
+                  {lang === 'en' 
+                    ? 'The system is currently empty. Please import your warehouse and inventory data to begin.' 
+                    : 'El sistema está actualmente vacío. Por favor importe sus datos de almacén e inventario para comenzar.'}
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button 
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.xlsx,.xls,.csv';
+                    input.onchange = (e: any) => {
+                      const file = e.target.files[0];
+                      if (file) handleGlobalDataImport(file);
+                    };
+                    input.click();
+                  }}
+                  disabled={isImporting}
+                  className="px-8 py-4 bg-porteo-orange text-white rounded-2xl font-bold shadow-xl shadow-porteo-orange/20 hover:scale-105 transition-all flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isImporting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                  {lang === 'en' ? (isImporting ? 'Importing...' : 'Import Data Now') : (isImporting ? 'Importando...' : 'Importar Datos Ahora')}
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    setWarehouses(MOCK_WAREHOUSES);
+                    setInventoryItems(MOCK_INVENTORY);
+                    setSelectedWarehouse(MOCK_WAREHOUSES[0]);
+                    setMarket(MOCK_WAREHOUSES[0].market);
+                    addNotification(lang === 'en' ? 'Sample data loaded successfully!' : '¡Datos de muestra cargados con éxito!', 'operational');
+                  }}
+                  className="px-8 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                >
+                  {lang === 'en' ? 'Load Sample Data' : 'Cargar Datos de Muestra'}
+                </button>
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
-            {activeTab === 'control-tower' && (
+            {activeTab === 'control-tower' && selectedWarehouse && (
               <motion.div 
                 key="control-tower"
                 initial={{ opacity: 0, y: 10 }}
@@ -760,7 +1161,7 @@ export default function App() {
                             setTimeout(() => {
                               setIsOptimizing(false);
                               setOptimizationLogs(prev => [newLog, ...prev]);
-                              alert(lang === 'en' ? 'Warehouse optimization complete! 12% efficiency gain projected.' : '¡Optimización de almacén completa! Se proyecta un 12% de ganancia en eficiencia.');
+                              addNotification(lang === 'en' ? 'Warehouse optimization complete! 12% efficiency gain projected.' : '¡Optimización de almacén completa! Se proyecta un 12% de ganancia en eficiencia.', 'operational');
                             }, 2000);
                           }}
                           disabled={isOptimizing}
@@ -907,8 +1308,8 @@ export default function App() {
                           className="w-full flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-porteo-orange rounded-full" />
-                            <span className="text-[10px] text-white/70 uppercase font-bold tracking-widest">7 Pending AI Tasks</span>
+                            <span className="w-2 h-2 bg-porteo-orange rounded-full animate-pulse" />
+                            <span className="text-[10px] text-white/70 uppercase font-bold tracking-widest">{aiTasks.length} {lang === 'en' ? 'Pending AI Tasks' : 'Tareas IA Pendientes'}</span>
                           </div>
                           <ChevronRight className="w-4 h-4 text-white/20" />
                         </button>
@@ -962,14 +1363,14 @@ export default function App() {
                         ) : (
                           <>
                             <div 
-                              onClick={() => alert(lang === 'en' ? 'Opening Carta Porte Generator...' : 'Abriendo Generador de Carta Porte...')}
+                              onClick={() => addNotification(lang === 'en' ? 'Opening Carta Porte Generator...' : 'Abriendo Generador de Carta Porte...', 'operational')}
                               className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-blue/50 transition-all cursor-pointer"
                             >
                               <p className="text-[10px] font-bold text-porteo-blue uppercase mb-1">{t.cartaPorte}</p>
                               <p className="text-xs text-white/70">CFDI Carta Porte.</p>
                             </div>
                             <div 
-                              onClick={() => alert(lang === 'en' ? 'Opening IMMEX Control Panel...' : 'Abriendo Panel de Control IMMEX...')}
+                              onClick={() => addNotification(lang === 'en' ? 'Opening IMMEX Control Panel...' : 'Abriendo Panel de Control IMMEX...', 'operational')}
                               className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-blue/50 transition-all cursor-pointer"
                             >
                               <p className="text-[10px] font-bold text-porteo-blue uppercase mb-1">{t.immex}</p>
@@ -984,7 +1385,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'analytics' && (
+            {activeTab === 'analytics' && selectedWarehouse && (
               <motion.div 
                 key="analytics"
                 initial={{ opacity: 0, y: 20 }}
@@ -1002,6 +1403,7 @@ export default function App() {
                     trucks: activeTrucksCount.toString()
                   }}
                   exportReport={exportReport}
+                  addNotification={addNotification}
                 />
               </motion.div>
             )}
@@ -1014,83 +1416,275 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
-                <div className="flex justify-between items-center">
-                  <h2 className="text-3xl font-bold text-white tracking-tight">{t.inventory}</h2>
-                  <div className="flex gap-3">
+                {!selectedWarehouse ? (
+                  <div className="h-[60vh] flex flex-col items-center justify-center text-center space-y-6">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
+                      <Package className="w-10 h-10 text-white/20" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white">{lang === 'en' ? 'Select a Warehouse' : 'Seleccione un Almacén'}</h3>
+                      <p className="text-white/40 mt-2 max-w-sm">
+                        {lang === 'en' 
+                          ? 'Please select a warehouse from the dashboard or create a new one to manage inventory.' 
+                          : 'Por favor seleccione un almacén del tablero o cree uno nuevo para gestionar el inventario.'}
+                      </p>
+                    </div>
                     <button 
-                      onClick={() => setActiveModal('add-inventory')}
-                      className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-sm font-bold hover:bg-porteo-orange/90 transition-colors flex items-center gap-2"
+                      onClick={() => setActiveTab('control-tower')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:scale-105 transition-all"
                     >
-                      <Plus className="w-4 h-4" />
-                      {lang === 'en' ? 'Add Item' : 'Agregar Item'}
-                    </button>
-                    <button 
-                      onClick={() => setActiveModal('import-inventory')}
-                      className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
-                    >
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Import' : 'Importar'}
-                    </button>
-                    <button className="px-4 py-2 bg-porteo-blue text-white rounded-xl text-sm font-bold hover:bg-porteo-blue/90 transition-colors flex items-center gap-2">
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Export CSV' : 'Exportar CSV'}
+                      {lang === 'en' ? 'Go to Dashboard' : 'Ir al Tablero'}
                     </button>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h2 className="text-3xl font-bold text-white tracking-tight">{t.inventory}</h2>
+                        <p className="text-white/40 text-sm mt-1">{selectedWarehouse.name} • {filteredInventory.length} {lang === 'en' ? 'Items Found' : 'Items Encontrados'}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <button 
+                          onClick={() => setIsInventoryCompact(!isInventoryCompact)}
+                          className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+                        >
+                          <Layout className="w-4 h-4" />
+                          {isInventoryCompact ? (lang === 'en' ? 'Standard View' : 'Vista Estándar') : (lang === 'en' ? 'Compact View' : 'Vista Compacta')}
+                        </button>
+                        <button 
+                          onClick={() => setActiveModal('add-inventory')}
+                          className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-sm font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20 flex items-center gap-2"
+                        >
+                          <Plus className="w-4 h-4" />
+                          {lang === 'en' ? 'Add Item' : 'Agregar Item'}
+                        </button>
+                        <button 
+                          onClick={() => setActiveModal('import-inventory')}
+                          className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          {lang === 'en' ? 'Import' : 'Importar'}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (filteredInventory.length === 0) {
+                              addNotification(lang === 'en' ? 'No data to export' : 'No hay datos para exportar', 'alert');
+                              return;
+                            }
+                            const headers = ['SKU', 'Name', 'Quantity', 'Unit', 'Location', 'Pallet ID', 'Customer'];
+                            const csvContent = [
+                              headers.join(','),
+                              ...filteredInventory.map(item => [
+                                `"${item.sku}"`,
+                                `"${item.name}"`,
+                                item.quantity,
+                                `"${item.unit}"`,
+                                `"${item.location}"`,
+                                `"${item.palletId}"`,
+                                `"${item.customer}"`
+                              ].join(','))
+                            ].join('\n');
+                            
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.setAttribute('href', url);
+                            link.setAttribute('download', `inventory-export-${new Date().toISOString().split('T')[0]}.csv`);
+                            link.style.visibility = 'hidden';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            addNotification(lang === 'en' ? 'Inventory exported successfully!' : '¡Inventario exportado con éxito!', 'operational');
+                          }}
+                          className="px-4 py-2 bg-porteo-blue text-white rounded-xl text-sm font-bold hover:bg-porteo-blue/90 transition-all shadow-lg shadow-porteo-blue/20 flex items-center gap-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          {lang === 'en' ? 'Export CSV' : 'Exportar CSV'}
+                        </button>
+                      </div>
+                    </div>
 
-                <div className="glass rounded-3xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="text-white/40 text-[10px] uppercase tracking-widest border-b border-white/10">
-                          <th className="px-6 py-4">SKU</th>
-                          <th className="px-6 py-4">Product</th>
-                          <th className="px-6 py-4">{lang === 'en' ? 'Brand / Category' : 'Marca / Categoría'}</th>
-                          <th className="px-6 py-4">Quantity</th>
-                          <th className="px-6 py-4">Location</th>
-                          <th className="px-6 py-4">Customer</th>
-                          <th className="px-6 py-4">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm">
-                        {filteredInventory.map((item, i) => (
-                          <tr 
-                            key={i} 
-                            onClick={() => {
-                              setSelectedInventoryItem(item);
-                              setActiveModal('inventory-detail');
-                            }}
-                            className="border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer group"
+                    {/* Filters & Search */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="md:col-span-2 relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                        <input 
+                          type="text"
+                          placeholder={lang === 'en' ? "Search by SKU, Name, or Customer..." : "Buscar por SKU, Nombre o Cliente..."}
+                          value={inventorySearch}
+                          onChange={(e) => setInventorySearch(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-white text-sm focus:border-porteo-orange/50 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="relative">
+                        <LayoutDashboard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                        <select 
+                          value={inventoryCategoryFilter}
+                          onChange={(e) => setInventoryCategoryFilter(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-white text-sm focus:border-porteo-orange/50 outline-none appearance-none transition-all"
+                        >
+                          <option value="all">{lang === 'en' ? 'All Categories' : 'Todas las Categorías'}</option>
+                          {Array.from(new Set(inventoryItems.map(i => i.category).filter(Boolean))).map(cat => (
+                            <option key={cat as string} value={cat as string}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="relative">
+                        <LayoutDashboard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                        <select 
+                          value={inventoryLocationFilter}
+                          onChange={(e) => setInventoryLocationFilter(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-white text-sm focus:border-porteo-orange/50 outline-none appearance-none transition-all"
+                        >
+                          <option value="all">{lang === 'en' ? 'All Locations' : 'Todas las Ubicaciones'}</option>
+                          {Array.from(new Set(inventoryItems.map(i => i.location).filter(Boolean))).map(loc => (
+                            <option key={loc as string} value={loc as string}>{loc}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className={`glass rounded-[32px] overflow-hidden border border-white/10 shadow-2xl ${isInventoryCompact ? 'max-h-[600px] flex flex-col' : ''}`}>
+                      <div className="overflow-x-auto overflow-y-auto scrollbar-hide">
+                        <table className="w-full text-left border-collapse relative">
+                          <thead className="sticky top-0 z-10 bg-slate-900 shadow-sm">
+                            <tr className="bg-white/5 text-white/40 text-[10px] uppercase tracking-widest">
+                              <th className="px-8 py-5 font-bold">{lang === 'en' ? 'Product Info' : 'Información del Producto'}</th>
+                              <th className="px-8 py-5 font-bold">{lang === 'en' ? 'Details' : 'Detalles'}</th>
+                              <th className="px-8 py-5 font-bold">{lang === 'en' ? 'Stock' : 'Existencias'}</th>
+                              <th className="px-8 py-5 font-bold">{lang === 'en' ? 'Location' : 'Ubicación'}</th>
+                              <th className="px-8 py-5 font-bold">{lang === 'en' ? 'Status' : 'Estado'}</th>
+                              <th className="px-8 py-5 font-bold text-right">{lang === 'en' ? 'Actions' : 'Acciones'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-sm">
+                            {paginatedInventory.length > 0 ? paginatedInventory.map((item, i) => (
+                              <tr 
+                                key={item.id || i} 
+                                onClick={() => {
+                                  setSelectedInventoryItem(item);
+                                  setActiveModal('inventory-detail');
+                                }}
+                                className={`border-b border-white/5 hover:bg-white/[0.02] transition-all cursor-pointer group ${isInventoryCompact ? 'py-2' : 'py-6'}`}
+                              >
+                                <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'}`}>
+                                  <div className="flex items-center gap-4">
+                                    <div className={`${isInventoryCompact ? 'w-8 h-8' : 'w-12 h-12'} bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 group-hover:border-porteo-orange/30 transition-all`}>
+                                      <Package className={`${isInventoryCompact ? 'w-4 h-4' : 'w-6 h-6'} text-white/20 group-hover:text-porteo-orange/50 transition-all`} />
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className={`text-white font-bold group-hover:text-porteo-orange transition-all ${isInventoryCompact ? 'text-sm' : 'text-base'}`}>{item.name}</span>
+                                      <span className="text-[10px] font-mono text-white/40">{item.sku}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'}`}>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-white/70 font-medium">{item.brand || '-'}</span>
+                                    <span className="text-[10px] text-porteo-orange/60 font-black uppercase tracking-tighter">{item.category || '-'}</span>
+                                  </div>
+                                </td>
+                                <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'}`}>
+                                  <div className="flex flex-col">
+                                    <span className={`text-white font-bold ${isInventoryCompact ? 'text-base' : 'text-lg'}`}>{item.quantity}</span>
+                                    <span className="text-[10px] text-white/30 uppercase font-bold">{item.unit}</span>
+                                  </div>
+                                </td>
+                                <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'}`}>
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-porteo-blue/10 rounded-lg">
+                                      <MapPin className="w-3 h-3 text-porteo-blue" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-white font-bold">{item.location}</span>
+                                      <span className="text-[10px] text-white/30 uppercase">Pallet: {item.palletId}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'}`}>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                    <span className="text-emerald-500 text-[10px] font-black uppercase tracking-widest">Active</span>
+                                  </div>
+                                </td>
+                                <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'} text-right`}>
+                                  <button className="p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all">
+                                    <ChevronRight className="w-4 h-4 text-white/40" />
+                                  </button>
+                                </td>
+                              </tr>
+                            )) : (
+                              <tr>
+                                <td colSpan={6} className="px-8 py-20 text-center">
+                                  <div className="flex flex-col items-center gap-4">
+                                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
+                                      <Search className="w-8 h-8 text-white/10" />
+                                    </div>
+                                    <p className="text-white/40 font-medium">{lang === 'en' ? 'No items match your search' : 'No hay artículos que coincidan con su búsqueda'}</p>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {/* Pagination Controls */}
+                      <div className="p-4 border-t border-white/10 flex items-center justify-between bg-white/5">
+                        <div className="text-xs text-white/40">
+                          {lang === 'en' 
+                            ? `Showing ${Math.min(filteredInventory.length, (inventoryPage - 1) * itemsPerPage + 1)} to ${Math.min(filteredInventory.length, inventoryPage * itemsPerPage)} of ${filteredInventory.length} items`
+                            : `Mostrando ${Math.min(filteredInventory.length, (inventoryPage - 1) * itemsPerPage + 1)} a ${Math.min(filteredInventory.length, inventoryPage * itemsPerPage)} de ${filteredInventory.length} artículos`}
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            disabled={inventoryPage === 1}
+                            onClick={() => setInventoryPage(prev => Math.max(1, prev - 1))}
+                            className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-white text-xs disabled:opacity-30 hover:bg-white/10 transition-colors"
                           >
-                            <td className="px-6 py-4 font-mono text-porteo-orange font-bold">{item.sku}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col">
-                                <span className="text-white font-medium">{item.name}</span>
-                                {item.oemNumber && <span className="text-[10px] text-white/30">OEM: {item.oemNumber}</span>}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col">
-                                <span className="text-white/70">{item.brand || '-'}</span>
-                                <span className="text-[10px] text-porteo-orange/60 font-bold uppercase">{item.category || '-'}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-white/70">{item.quantity} {item.unit}</td>
-                            <td className="px-6 py-4 text-white/70">{item.location}</td>
-                            <td className="px-6 py-4 text-white/70">{item.customer}</td>
-                            <td className="px-6 py-4">
-                              <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded-lg uppercase">In Stock</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                            {lang === 'en' ? 'Previous' : 'Anterior'}
+                          </button>
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, totalInventoryPages) }, (_, i) => {
+                              let pageNum = i + 1;
+                              if (totalInventoryPages > 5 && inventoryPage > 3) {
+                                pageNum = inventoryPage - 2 + i;
+                                if (pageNum > totalInventoryPages) pageNum = totalInventoryPages - (4 - i);
+                              }
+                              if (pageNum <= 0) return null;
+                              if (pageNum > totalInventoryPages) return null;
+                              
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => setInventoryPage(pageNum)}
+                                  className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                    inventoryPage === pageNum 
+                                      ? 'bg-porteo-orange text-white' 
+                                      : 'bg-white/5 text-white/40 hover:bg-white/10'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button 
+                            disabled={inventoryPage === totalInventoryPages}
+                            onClick={() => setInventoryPage(prev => Math.min(totalInventoryPages, prev + 1))}
+                            className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-white text-xs disabled:opacity-30 hover:bg-white/10 transition-colors"
+                          >
+                            {lang === 'en' ? 'Next' : 'Siguiente'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
 
-            {activeTab === 'map3d' && (
+            {activeTab === 'map3d' && selectedWarehouse && (
               <motion.div 
                 key="map3d"
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1141,17 +1735,18 @@ export default function App() {
                       setActiveModal('rack-detail');
                     }}
                     onAuditRack={(id) => {
-                      alert(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`);
+                      addNotification(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`, 'operational');
                     }}
                     onRelocateItems={(id) => {
-                      alert(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`);
+                      addNotification(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`, 'operational');
                     }}
+                    addNotification={addNotification}
                   />
                 </div>
               </motion.div>
             )}
 
-            {activeTab === 'tpl' && (
+            {activeTab === 'tpl' && selectedWarehouse && (
               <motion.div 
                 key="tpl"
                 initial={{ opacity: 0, y: 20 }}
@@ -1172,8 +1767,9 @@ export default function App() {
                   }}
                   onBulkImport={(newShipments) => {
                     setTplProcesses(prev => [...newShipments, ...prev]);
-                    alert(lang === 'en' ? `Successfully imported ${newShipments.length} shipments!` : `¡Se importaron con éxito ${newShipments.length} envíos!`);
+                    addNotification(lang === 'en' ? `Successfully imported ${newShipments.length} shipments!` : `¡Se importaron con éxito ${newShipments.length} envíos!`, 'operational');
                   }}
+                  addNotification={addNotification}
                 />
               </motion.div>
             )}
@@ -1190,7 +1786,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'operations' && (
+            {activeTab === 'operations' && selectedWarehouse && (
               <motion.div 
                 key="operations"
                 initial={{ opacity: 0, y: 20 }}
@@ -1198,11 +1794,11 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 className="h-full"
               >
-                <WarehouseOperations language={lang} />
+                <WarehouseOperations language={lang} inventoryItems={inventoryItems} />
               </motion.div>
             )}
 
-            {activeTab === 'commercial' && (
+            {activeTab === 'commercial' && selectedWarehouse && (
               <motion.div 
                 key="commercial"
                 initial={{ opacity: 0, y: 20 }}
@@ -1210,11 +1806,18 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 className="h-full"
               >
-                <CommercialManagement language={lang} />
+                <CommercialManagement 
+                  language={lang} 
+                  onViewContract={(contract) => {
+                    setSelectedContract(contract);
+                    setActiveModal('contract-detail');
+                  }}
+                  onNewContract={() => setActiveModal('new-contract')}
+                />
               </motion.div>
             )}
 
-            {activeTab === 'financials' && (
+            {activeTab === 'financials' && selectedWarehouse && (
               <motion.div 
                 key="financials"
                 initial={{ opacity: 0 }}
@@ -1226,11 +1829,12 @@ export default function App() {
                   financialData={dynamicFinancialData} 
                   pieData={dynamicCostData} 
                   colors={COLORS} 
+                  addNotification={addNotification}
                 />
               </motion.div>
             )}
 
-            {activeTab === 'personnel' && (
+            {activeTab === 'personnel' && selectedWarehouse && (
               <motion.div 
                 key="personnel"
                 initial={{ opacity: 0 }}
@@ -1316,7 +1920,7 @@ export default function App() {
                           </p>
                         </div>
                         <button 
-                          onClick={() => alert(lang === 'en' ? 'Generating Labor Optimization Plan...' : 'Generando Plan de Optimización Laboral...')}
+                          onClick={() => addNotification(lang === 'en' ? 'Generating Labor Optimization Plan...' : 'Generando Plan de Optimización Laboral...', 'operational')}
                           className="w-full py-3 bg-porteo-blue text-white rounded-xl text-xs font-bold hover:bg-porteo-blue/80 transition-all"
                         >
                           {lang === 'en' ? 'Generate Optimization Plan' : 'Generar Plan de Optimización'}
@@ -1328,7 +1932,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'patio' && (
+            {activeTab === 'patio' && selectedWarehouse && (
               <motion.div 
                 key="patio"
                 initial={{ opacity: 0 }}
@@ -1349,19 +1953,41 @@ export default function App() {
                         className="hidden" 
                         onChange={(e) => {
                           if (e.target.files?.[0]) {
+                            const file = e.target.files[0];
                             setIsProcessing(true);
-                            setTimeout(() => {
-                              setIsProcessing(false);
-                              const bulkTrucks = [
-                                { id: 'TRK-B01', carrier: 'Swift', type: 'Full Truck', driver: 'Bulk Driver 1', status: 'Waiting', dock: '-', eta: '14:00', idling: false },
-                                { id: 'TRK-B02', carrier: 'Schneider', type: 'Thorton', driver: 'Bulk Driver 2', status: 'Waiting', dock: '-', eta: '14:30', idling: false },
-                                { id: 'TRK-B03', carrier: 'Werner', type: '3.5 Van', driver: 'Bulk Driver 3', status: 'Waiting', dock: '-', eta: '15:00', idling: false },
-                              ];
-                              setTrucks([...bulkTrucks, ...trucks]);
-                              alert(lang === 'en' ? `Successfully processed ${e.target.files[0].name}. 3 new trucks added to the waiting list.` : `Procesado con éxito ${e.target.files[0].name}. 3 nuevos camiones añadidos a la lista de espera.`);
-                            }, 1500);
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              try {
+                                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const sheetName = workbook.SheetNames[0];
+                                const sheet = workbook.Sheets[sheetName];
+                                const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
+                                
+                                const newTrucks = jsonData.map((row, idx) => ({
+                                  id: row.id || row.ID || `TRK-IMP-${idx}`,
+                                  carrier: row.carrier || row.Carrier || row.Carrier_Name || 'Unknown',
+                                  type: row.type || row.Type || 'Full Truck',
+                                  driver: row.driver || row.Driver || 'Unknown',
+                                  status: 'Waiting',
+                                  dock: '-',
+                                  eta: row.eta || row.ETA || 'TBD',
+                                  idling: false
+                                }));
+
+                                setTrucks(prev => [...newTrucks, ...prev]);
+                                addNotification(lang === 'en' ? `Successfully processed ${file.name}. ${newTrucks.length} trucks added.` : `Procesado con éxito ${file.name}. ${newTrucks.length} camiones añadidos.`, 'operational');
+                              } catch (err) {
+                                console.error('Error parsing truck data:', err);
+                                addNotification(lang === 'en' ? 'Error parsing file.' : 'Error al analizar el archivo.', 'alert');
+                              } finally {
+                                setIsProcessing(false);
+                              }
+                            };
+                            reader.readAsArrayBuffer(file);
                           }
-                        }}
+                        }} 
+                        accept=".xlsx,.xls,.csv"
                       />
                       <label 
                         htmlFor="truck-upload"
@@ -1471,7 +2097,7 @@ export default function App() {
                                 <td className="py-4 text-right">
                                   <div className="flex justify-end gap-2">
                                     <button 
-                                      onClick={() => alert(lang === 'en' ? `Opening GPS Telemetry for ${truck.id}...` : `Abriendo Telemetría GPS para ${truck.id}...`)}
+                                      onClick={() => addNotification(lang === 'en' ? `Opening GPS Telemetry for ${truck.id}...` : `Abriendo Telemetría GPS para ${truck.id}...`, 'operational')}
                                       className="p-2 hover:bg-porteo-blue/20 rounded-lg transition-colors text-porteo-blue"
                                       title="GPS Telemetry"
                                     >
@@ -1558,10 +2184,10 @@ export default function App() {
                         })}
 
                         <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-                          <button onClick={() => alert('Recalibrating GPS Sensors...')} className="p-2 bg-slate-900/80 border border-white/10 rounded-xl hover:bg-slate-800 transition-all">
+                          <button onClick={() => addNotification('Recalibrating GPS Sensors...', 'operational')} className="p-2 bg-slate-900/80 border border-white/10 rounded-xl hover:bg-slate-800 transition-all">
                             <RefreshCw className="w-3 h-3 text-white/40" />
                           </button>
-                          <button onClick={() => alert('Switching to Satellite View...')} className="p-2 bg-slate-900/80 border border-white/10 rounded-xl hover:bg-slate-800 transition-all">
+                          <button onClick={() => addNotification('Switching to Satellite View...', 'operational')} className="p-2 bg-slate-900/80 border border-white/10 rounded-xl hover:bg-slate-800 transition-all">
                             <Globe2 className="w-3 h-3 text-white/40" />
                           </button>
                         </div>
@@ -1630,7 +2256,7 @@ export default function App() {
                               }
                             });
                             setTrucks(updatedTrucks);
-                            alert(lang === 'en' ? 'Dock allocation optimized based on priority and ETA.' : 'Asignación de muelles optimizada basada en prioridad y ETA.');
+                            addNotification(lang === 'en' ? 'Dock allocation optimized based on priority and ETA.' : 'Asignación de muelles optimizada basada en prioridad y ETA.', 'operational');
                           }, 2000);
                         }}
                         className="w-full mt-6 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
@@ -1662,7 +2288,7 @@ export default function App() {
                               </span>
                               <div className="flex gap-2">
                                 <button 
-                                  onClick={() => alert(lang === 'en' ? `Calling ${carrier.name} Dispatch at ${carrier.phone}...` : `Llamando a Despacho de ${carrier.name} al ${carrier.phone}...`)}
+                                  onClick={() => addNotification(lang === 'en' ? `Calling ${carrier.name} Dispatch at ${carrier.phone}...` : `Llamando a Despacho de ${carrier.name} al ${carrier.phone}...`, 'operational')}
                                   className="p-1.5 bg-porteo-orange/10 text-porteo-orange rounded-lg hover:bg-porteo-orange transition-all hover:text-white"
                                 >
                                   <Activity className="w-3 h-3" />
@@ -1670,7 +2296,7 @@ export default function App() {
                                 <button 
                                   onClick={() => {
                                     setSelectedCarrier(carrier);
-                                    alert(lang === 'en' ? `Opening full performance report for ${carrier.name}` : `Abriendo reporte de desempeño completo para ${carrier.name}`);
+                                    addNotification(lang === 'en' ? `Opening full performance report for ${carrier.name}` : `Abriendo reporte de desempeño completo para ${carrier.name}`, 'operational');
                                   }}
                                   className="p-1.5 bg-white/5 text-white/40 rounded-lg hover:bg-white/10 transition-all hover:text-white"
                                 >
@@ -1693,11 +2319,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <PatioManagement lang={lang} searchQuery={searchQuery} />
+                <PatioManagement lang={lang} searchQuery={searchQuery} trucks={trucks} />
               </motion.div>
             )}
 
-            {activeTab === 'assembly' && (
+            {activeTab === 'assembly' && selectedWarehouse && (
               <motion.div 
                 key="assembly"
                 initial={{ opacity: 0, y: 10 }}
@@ -1708,18 +2334,18 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'research' && (
+            {activeTab === 'research' && selectedWarehouse && (
               <motion.div 
                 key="research"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <StrategicResearch lang={lang} setActiveTab={setActiveTab} />
+                <StrategicResearch lang={lang} setActiveTab={setActiveTab} addNotification={addNotification} />
               </motion.div>
             )}
 
-            {activeTab === 'admin' && editingWarehouse && (
+            {activeTab === 'admin' && (
               <motion.div 
                 key="admin"
                 initial={{ opacity: 0, y: 10 }}
@@ -1729,355 +2355,235 @@ export default function App() {
               >
                 <div className="flex justify-between items-end">
                   <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">{lang === 'en' ? 'Admin & Layout Editor' : 'Administración y Editor de Diseño'}</h2>
-                    <p className="text-white/40">{lang === 'en' ? 'Configure warehouse dimensions, zones, and rack layouts.' : 'Configure dimensiones, zonas y diseños de racks del almacén.'}</p>
+                    <h2 className="text-3xl font-bold text-white mb-2">{lang === 'en' ? 'System Administration' : 'Administración del Sistema'}</h2>
+                    <p className="text-white/40">{lang === 'en' ? 'Manage warehouse network, import data, and configure system settings.' : 'Gestione la red de almacenes, importe datos y configure los ajustes del sistema.'}</p>
                   </div>
-                  <button 
-                    onClick={() => {
-                      setNewWarehouseData({
-                        name: '',
-                        location: '',
-                        capacity: 50000,
-                        layout: {
-                          racks: { rows: 5, cols: 8 },
-                          docks: 4,
-                          zones: []
-                        }
-                      });
-                      setActiveModal('create-warehouse');
-                    }}
-                    className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
-                  >
-                    <Plus className="w-5 h-5" />
-                    {lang === 'en' ? 'Create New Warehouse' : 'Crear Nuevo Almacén'}
-                  </button>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.xlsx,.xls,.csv';
+                        input.onchange = (e: any) => {
+                          const file = e.target.files[0];
+                          if (file) handleGlobalDataImport(file);
+                        };
+                        input.click();
+                      }}
+                      disabled={isImporting}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20 disabled:opacity-50"
+                    >
+                      {isImporting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                      {lang === 'en' ? (isImporting ? 'Importing...' : 'Global Data Import') : (isImporting ? 'Importando...' : 'Importar Datos Globales')}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setWarehouses(MOCK_WAREHOUSES);
+                        setInventoryItems(MOCK_INVENTORY);
+                        addNotification(lang === 'en' ? 'Sample data loaded successfully!' : '¡Datos de muestra cargados con éxito!', 'operational');
+                      }}
+                      className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all"
+                    >
+                      <Database className="w-5 h-5" />
+                      {lang === 'en' ? 'Load Sample Data' : 'Cargar Muestra'}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setNewWarehouseData({
+                          name: '',
+                          location: '',
+                          capacity: 50000,
+                          market: market,
+                          layout: {
+                            racks: { rows: 5, cols: 8 },
+                            docks: 4,
+                            zones: []
+                          }
+                        });
+                        setActiveModal('create-warehouse');
+                      }}
+                      className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all"
+                    >
+                      <Plus className="w-5 h-5" />
+                      {lang === 'en' ? 'Add Warehouse' : 'Agregar Almacén'}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex gap-4 p-1 bg-white/5 rounded-2xl w-fit border border-white/10">
-                  <button 
-                    onClick={() => setAdminSubTab('layout')}
-                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${adminSubTab === 'layout' ? 'bg-porteo-blue text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                  >
-                    {lang === 'en' ? 'Layout Editor' : 'Editor de Diseño'}
-                  </button>
-                  <button 
-                    onClick={() => setAdminSubTab('master-data')}
-                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${adminSubTab === 'master-data' ? 'bg-porteo-blue text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                  >
-                    {lang === 'en' ? 'Master Data' : 'Datos Maestros'}
-                  </button>
-                </div>
-
-                {adminSubTab === 'layout' ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-1 space-y-6">
-                    <div className="glass p-6 rounded-3xl space-y-6">
-                      <h3 className="text-lg font-bold text-white">{lang === 'en' ? 'Layout Configuration' : 'Configuración de Diseño'}</h3>
-                      
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs text-white/40 uppercase font-bold">Warehouse Name</label>
-                          <input 
-                            type="text" 
-                            value={editingWarehouse.name} 
-                            onChange={(e) => setEditingWarehouse({ ...editingWarehouse, name: e.target.value })}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 outline-none" 
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-xs text-white/40 uppercase font-bold">Rack Rows</label>
-                            <input 
-                              type="number" 
-                              value={editingWarehouse.layout?.racks.rows} 
-                              onChange={(e) => setEditingWarehouse({ 
-                                ...editingWarehouse, 
-                                layout: { 
-                                  ...editingWarehouse.layout!, 
-                                  racks: { ...editingWarehouse.layout!.racks, rows: parseInt(e.target.value) || 0 } 
-                                } 
-                              })}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 outline-none" 
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-xs text-white/40 uppercase font-bold">Rack Columns</label>
-                            <input 
-                              type="number" 
-                              value={editingWarehouse.layout?.racks.cols} 
-                              onChange={(e) => setEditingWarehouse({ 
-                                ...editingWarehouse, 
-                                layout: { 
-                                  ...editingWarehouse.layout!, 
-                                  racks: { ...editingWarehouse.layout!.racks, cols: parseInt(e.target.value) || 0 } 
-                                } 
-                              })}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 outline-none" 
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs text-white/40 uppercase font-bold">Loading Docks</label>
-                          <input 
-                            type="number" 
-                            value={editingWarehouse.layout?.docks} 
-                            onChange={(e) => setEditingWarehouse({ 
-                              ...editingWarehouse, 
-                              layout: { ...editingWarehouse.layout!, docks: parseInt(e.target.value) || 0 } 
-                            })}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 outline-none" 
-                          />
-                        </div>
-                      </div>
-
-                      <div className="pt-6 border-t border-white/10 space-y-4">
-                        <h4 className="text-sm font-bold text-white">{lang === 'en' ? 'Zones & Colors' : 'Zonas y Colores'}</h4>
-                        {editingWarehouse.layout?.zones.map((zone, i) => (
-                          <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
-                            <div className="flex items-center gap-3">
-                              <input 
-                                type="color" 
-                                value={zone.color} 
-                                onChange={(e) => {
-                                  const newZones = [...editingWarehouse.layout!.zones];
-                                  newZones[i] = { ...newZones[i], color: e.target.value };
-                                  setEditingWarehouse({ ...editingWarehouse, layout: { ...editingWarehouse.layout!, zones: newZones } });
-                                }}
-                                className="w-6 h-6 rounded-full bg-transparent border-none cursor-pointer"
-                              />
-                              <input 
-                                type="text" 
-                                value={zone.name} 
-                                onChange={(e) => {
-                                  const newZones = [...editingWarehouse.layout!.zones];
-                                  newZones[i] = { ...newZones[i], name: e.target.value };
-                                  setEditingWarehouse({ ...editingWarehouse, layout: { ...editingWarehouse.layout!, zones: newZones } });
-                                }}
-                                className="bg-transparent border-none text-sm text-white focus:ring-0 w-24"
-                              />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="glass p-8 rounded-[32px] space-y-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                        <WarehouseIcon className="w-5 h-5 text-porteo-orange" />
+                        {lang === 'en' ? 'Warehouse Network' : 'Red de Almacenes'}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {warehouses.map(wh => (
+                          <div 
+                            key={wh.id}
+                            onClick={() => {
+                              setEditingWarehouse(wh);
+                              setAdminSubTab('layout');
+                            }}
+                            className={`p-6 rounded-2xl border transition-all cursor-pointer group ${editingWarehouse?.id === wh.id ? 'bg-porteo-orange/10 border-porteo-orange' : 'bg-white/5 border-white/10 hover:border-white/20'}`}
+                          >
+                            <div className="flex justify-between items-start mb-4">
+                              <div className={`p-3 rounded-xl ${editingWarehouse?.id === wh.id ? 'bg-porteo-orange text-white' : 'bg-white/5 text-white/40 group-hover:text-white'}`}>
+                                <WarehouseIcon className="w-5 h-5" />
+                              </div>
+                              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${wh.status === 'optimal' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'}`}>
+                                {wh.status}
+                              </span>
                             </div>
-                            <span className="text-[10px] text-white/40">{zone.racks.length} Racks</span>
+                            <h4 className="text-white font-bold">{wh.name}</h4>
+                            <p className="text-white/40 text-xs mt-1">{wh.location} • {wh.market}</p>
                           </div>
                         ))}
-                        <div className="flex gap-2">
+                        {warehouses.length === 0 && (
+                          <div className="col-span-full py-12 text-center space-y-4">
+                            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto border border-white/10">
+                              <Database className="w-8 h-8 text-white/10" />
+                            </div>
+                            <p className="text-white/20 italic">{lang === 'en' ? 'No warehouses found. Import data to begin.' : 'No se encontraron almacenes. Importe datos para comenzar.'}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {editingWarehouse && (
+                      <div className="glass p-8 rounded-[32px] space-y-6">
+                        <div className="flex gap-4 p-1 bg-white/5 rounded-2xl w-fit border border-white/10">
                           <button 
-                            onClick={() => {
-                              const newZones = [
-                                { name: 'Zone A (Fast)', color: '#F27D26', racks: ['0-0', '0-1', '1-0', '1-1'] },
-                                { name: 'Zone B (Med)', color: '#004A99', racks: ['2-2', '2-3', '3-2', '3-3'] }
-                              ];
-                              setEditingWarehouse({ ...editingWarehouse, layout: { ...editingWarehouse.layout!, zones: newZones } });
-                              alert(lang === 'en' ? 'AI generated an optimized zone layout.' : 'IA generó un diseño de zonas optimizado.');
-                            }}
-                            className="flex-1 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] text-white/60 hover:text-white transition-all"
+                            onClick={() => setAdminSubTab('layout')}
+                            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${adminSubTab === 'layout' ? 'bg-porteo-blue text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
                           >
-                            Auto-Generate Zones
+                            {lang === 'en' ? 'Layout Editor' : 'Editor de Diseño'}
                           </button>
                           <button 
-                            onClick={() => {
-                              setEditingWarehouse({ ...editingWarehouse, layout: { ...editingWarehouse.layout!, zones: [] } });
-                            }}
-                            className="flex-1 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] text-white/60 hover:text-white transition-all"
+                            onClick={() => setAdminSubTab('master-data')}
+                            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${adminSubTab === 'master-data' ? 'bg-porteo-blue text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
                           >
-                            Clear All Zones
+                            {lang === 'en' ? 'Master Data' : 'Datos Maestros'}
                           </button>
                         </div>
-                        <button 
-                          onClick={() => {
-                            const newZone = { name: 'New Zone', color: '#ffffff', racks: [] };
-                            setEditingWarehouse({ 
-                              ...editingWarehouse, 
-                              layout: { 
-                                ...editingWarehouse.layout!, 
-                                zones: [...editingWarehouse.layout!.zones, newZone] 
-                              } 
-                            });
-                          }}
-                          className="w-full py-2 border border-dashed border-white/20 rounded-xl text-xs text-white/40 hover:text-white hover:border-white/40 transition-all"
-                        >
-                          + Add New Zone
-                        </button>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="lg:col-span-2">
-                    <div className="glass p-1 rounded-[32px] overflow-hidden">
-                      <Warehouse3D 
-                        warehouse={editingWarehouse} 
-                        externalAction={external3DAction}
-                        onViewDetails={(details) => {
-                          setSelectedRackDetails(details);
-                          setActiveModal('rack-detail');
-                        }}
-                        onAuditRack={(id) => {
-                          alert(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`);
-                        }}
-                        onRelocateItems={(id) => {
-                          alert(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`);
-                        }}
-                      />
-                    </div>
-                    <div className="mt-4 flex justify-between items-center">
-                      <button 
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = '.json,.csv,.xlsx,.xls';
-                          input.onchange = (e: any) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              setIsProcessing(true);
-                              addNotification(lang === 'en' ? `AI is parsing ${file.name} to generate layout...` : `IA está analizando ${file.name} para generar diseño...`, 'operational');
-                              
-                              // Simulate AI parsing and layout generation
-                              setTimeout(() => {
-                                const rows = 8;
-                                const cols = 12;
-                                const zones = [
-                                  { name: 'High Velocity', color: '#F27D26', racks: ['0-0', '0-1', '1-0', '1-1', '0-2', '1-2'] },
-                                  { name: 'Cold Storage', color: '#00AEEF', racks: ['4-4', '4-5', '5-4', '5-5'] }
-                                ];
-                                
-                                if (editingWarehouse) {
-                                  setEditingWarehouse({
-                                    ...editingWarehouse,
-                                    layout: {
-                                      racks: { rows, cols },
-                                      docks: 6,
-                                      zones: zones
-                                    }
-                                  });
-                                }
-                                setIsProcessing(false);
-                                addNotification(lang === 'en' ? 'Layout generated automatically from file data!' : '¡Diseño generado automáticamente desde los datos del archivo!', 'operational');
-                              }, 2000);
-                            }
-                          };
-                          input.click();
-                        }}
-                        className="px-4 py-2 bg-white/5 border border-white/10 text-white/60 rounded-xl text-xs font-bold hover:text-white hover:bg-white/10 transition-all flex items-center gap-2"
-                      >
-                        <Upload className="w-4 h-4" />
-                        {lang === 'en' ? 'Upload Layout Data (XLS/CSV)' : 'Cargar Datos de Diseño (XLS/CSV)'}
-                      </button>
-                      <div className="flex gap-3">
-                        <button 
-                          onClick={() => setEditingWarehouse(selectedWarehouse)}
-                          className="px-6 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-sm font-bold"
-                        >
-                          {lang === 'en' ? 'Reset Layout' : 'Restablecer Diseño'}
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const newWarehouses = warehouses.map(w => w.id === editingWarehouse.id ? editingWarehouse : w);
-                            setWarehouses(newWarehouses);
-                            setSelectedWarehouse(editingWarehouse);
-                            alert(lang === 'en' ? 'Warehouse layout saved successfully!' : '¡Diseño del almacén guardado con éxito!');
-                          }}
-                          className="px-6 py-2 bg-porteo-blue text-white rounded-xl text-sm font-bold"
-                        >
-                          {lang === 'en' ? 'Save Changes' : 'Guardar Cambios'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {/* Carriers Management */}
-                    <div className="glass p-6 rounded-3xl space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                          <Truck className="w-5 h-5 text-porteo-orange" />
-                          {lang === 'en' ? 'Carriers' : 'Transportistas'}
-                        </h3>
-                        <button 
-                          onClick={() => alert(lang === 'en' ? 'Opening Carrier Registration...' : 'Abriendo Registro de Transportista...')}
-                          className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-porteo-orange transition-all"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="space-y-3">
-                        {carriers.map((carrier, i) => (
-                          <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center group hover:border-porteo-orange/30 transition-all">
-                            <div>
-                              <p className="text-sm font-bold text-white">{carrier.name}</p>
-                              <p className="text-[10px] text-white/40">{carrier.phone}</p>
+                        {adminSubTab === 'layout' ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-6">
+                              <h4 className="text-white font-bold flex items-center gap-2">
+                                <Move className="w-4 h-4 text-porteo-orange" />
+                                {lang === 'en' ? 'Dimensions & Capacity' : 'Dimensiones y Capacidad'}
+                              </h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Rack Rows' : 'Filas de Racks'}</label>
+                                  <input 
+                                    type="number" 
+                                    value={editingWarehouse.layout?.racks.rows || 0}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value) || 0;
+                                      setWarehouses(prev => prev.map(w => w.id === editingWarehouse.id ? { ...w, layout: { ...w.layout, racks: { ...w.layout.racks, rows: val } } } : w));
+                                      setEditingWarehouse(prev => prev ? { ...prev, layout: { ...prev.layout, racks: { ...prev.layout.racks, rows: val } } } : null);
+                                    }}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 transition-all"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Rack Columns' : 'Columnas de Racks'}</label>
+                                  <input 
+                                    type="number" 
+                                    value={editingWarehouse.layout?.racks.cols || 0}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value) || 0;
+                                      setWarehouses(prev => prev.map(w => w.id === editingWarehouse.id ? { ...w, layout: { ...w.layout, racks: { ...w.layout.racks, cols: val } } } : w));
+                                      setEditingWarehouse(prev => prev ? { ...prev, layout: { ...prev.layout, racks: { ...prev.layout.racks, cols: val } } } : null);
+                                    }}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 transition-all"
+                                  />
+                                </div>
+                              </div>
                             </div>
-                            <button className="opacity-0 group-hover:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all">
-                              <Settings className="w-3 h-3 text-white/40" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Customers Management */}
-                    <div className="glass p-6 rounded-3xl space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                          <Users className="w-5 h-5 text-porteo-orange" />
-                          {lang === 'en' ? 'Customers' : 'Clientes'}
-                        </h3>
-                        <button 
-                          onClick={() => alert(lang === 'en' ? 'Opening Customer Registration...' : 'Abriendo Registro de Cliente...')}
-                          className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-porteo-orange transition-all"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="space-y-3">
-                        {['Global Retail Co', 'Tech Logistics', 'Prime Distribution'].map((customer, i) => (
-                          <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center group hover:border-porteo-orange/30 transition-all">
-                            <div>
-                              <p className="text-sm font-bold text-white">{customer}</p>
-                              <p className="text-[10px] text-white/40">Active Partner</p>
-                            </div>
-                            <button className="opacity-0 group-hover:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all">
-                              <Settings className="w-3 h-3 text-white/40" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* System Users / Personnel */}
-                    <div className="glass p-6 rounded-3xl space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                          <Globe2 className="w-5 h-5 text-porteo-orange" />
-                          {lang === 'en' ? 'Personnel' : 'Personal'}
-                        </h3>
-                        <button 
-                          onClick={() => setActiveModal('add-personnel')}
-                          className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-porteo-orange transition-all"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="space-y-3">
-                        {['Alex Camacho', 'Maria Garcia', 'John Doe'].map((user, i) => (
-                          <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center group hover:border-porteo-orange/30 transition-all">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-porteo-blue/20 flex items-center justify-center text-[10px] font-bold text-porteo-blue">
-                                {user.split(' ').map(n => n[0]).join('')}
+                            <div className="p-6 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center space-y-4">
+                              <div className="w-16 h-16 bg-porteo-orange/20 rounded-full flex items-center justify-center">
+                                <Layers className="w-8 h-8 text-porteo-orange" />
                               </div>
                               <div>
-                                <p className="text-sm font-bold text-white">{user}</p>
-                                <p className="text-[10px] text-white/40">{i === 0 ? 'Admin' : 'Operator'}</p>
+                                <p className="text-white font-bold">{(editingWarehouse.layout?.racks.rows || 0) * (editingWarehouse.layout?.racks.cols || 0)} Total Racks</p>
+                                <p className="text-white/40 text-xs">{lang === 'en' ? 'Estimated storage positions: ' : 'Posiciones estimadas: '}{((editingWarehouse.layout?.racks.rows || 0) * (editingWarehouse.layout?.racks.cols || 0) * 5).toLocaleString()}</p>
                               </div>
                             </div>
-                            <button className="opacity-0 group-hover:opacity-100 p-2 hover:bg-white/10 rounded-lg transition-all">
-                              <Settings className="w-3 h-3 text-white/40" />
-                            </button>
                           </div>
-                        ))}
+                        ) : (
+                          <div className="space-y-4">
+                            <p className="text-white/40 italic text-sm">{lang === 'en' ? 'Master data management for ' : 'Gestión de datos maestros para '}{editingWarehouse.name}</p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <button className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all text-left">
+                                <p className="font-bold text-sm">SKU Registry</p>
+                                <p className="text-[10px] text-white/40">Manage product master data</p>
+                              </button>
+                              <button className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all text-left">
+                                <p className="font-bold text-sm">Customer List</p>
+                                <p className="text-[10px] text-white/40">Manage 3PL clients</p>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="glass p-8 rounded-[32px] space-y-6">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                        <Download className="w-5 h-5 text-porteo-blue" />
+                        {lang === 'en' ? 'Quick Actions' : 'Acciones Rápidas'}
+                      </h3>
+                      <div className="space-y-3">
+                        <button 
+                          onClick={() => {
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = '.xlsx,.xls,.csv';
+                            input.onchange = (e: any) => {
+                              const file = e.target.files[0];
+                              if (file) handleGlobalDataImport(file);
+                            };
+                            input.click();
+                          }}
+                          className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group"
+                        >
+                          <div className="w-10 h-10 bg-porteo-orange/20 rounded-xl flex items-center justify-center group-hover:bg-porteo-orange transition-colors">
+                            <Upload className="w-5 h-5 text-porteo-orange group-hover:text-white" />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-white font-bold text-sm">{lang === 'en' ? 'Import Global Data' : 'Importar Datos Globales'}</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Upload Excel file' : 'Subir archivo Excel'}</p>
+                          </div>
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const headers = ['Sheet: Warehouses (name, location, market, capacity)', 'Sheet: Inventory (sku, name, quantity, unit, location, palletId, customer)'];
+                            const blob = new Blob([headers.join('\n')], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = 'import-template-guide.txt';
+                            link.click();
+                          }}
+                          className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group"
+                        >
+                          <div className="w-10 h-10 bg-porteo-blue/20 rounded-xl flex items-center justify-center group-hover:bg-porteo-blue transition-colors">
+                            <FileText className="w-5 h-5 text-porteo-blue group-hover:text-white" />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-white font-bold text-sm">{lang === 'en' ? 'Download Template' : 'Descargar Plantilla'}</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Excel structure guide' : 'Guía de estructura Excel'}</p>
+                          </div>
+                        </button>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -2107,7 +2613,7 @@ export default function App() {
                     {stats.find(s => s.id === drillDownStat)?.label} {lang === 'en' ? 'Details' : 'Detalles'}
                   </h2>
                   <p className="text-white/40 text-sm mt-1">
-                    {lang === 'en' ? `Granular analysis for ${selectedWarehouse.name}` : `Análisis granular para ${selectedWarehouse.name}`}
+                    {lang === 'en' ? `Granular analysis for ${selectedWarehouse?.name || 'Warehouse'}` : `Análisis granular para ${selectedWarehouse?.name || 'Almacén'}`}
                   </p>
                 </div>
                 <button onClick={() => setDrillDownStat(null)} className="p-2 text-white/40 hover:text-white transition-colors">
@@ -2144,7 +2650,7 @@ export default function App() {
 
                 {drillDownView === 'trend' ? (
                   <div 
-                    onClick={() => alert(lang === 'en' ? 'Interacting with Historical Trend Graph' : 'Interactuando con Gráfica de Tendencia Histórica')}
+                    onClick={() => addNotification(lang === 'en' ? 'Interacting with Historical Trend Graph' : 'Interactuando con Gráfica de Tendencia Histórica', 'operational')}
                     className="glass p-8 rounded-3xl cursor-pointer hover:border-white/20 transition-all"
                   >
                     <h3 className="text-lg font-bold text-white mb-6">{lang === 'en' ? 'Historical Trend' : 'Tendencia Histórica'}</h3>
@@ -2256,7 +2762,7 @@ export default function App() {
                     setIsDownloading(true);
                     setTimeout(() => {
                       setIsDownloading(false);
-                      const content = "Porteo WMS - Full Warehouse Report\nGenerated: " + new Date().toLocaleString() + "\nWarehouse: " + selectedWarehouse.name + "\nStatus: Operational\nEfficiency: 94%";
+                      const content = "Porteo WMS - Full Warehouse Report\nGenerated: " + new Date().toLocaleString() + "\nWarehouse: " + (selectedWarehouse?.name || 'None') + "\nStatus: Operational\nEfficiency: 94%";
                       const blob = new Blob([content], { type: 'text/plain' });
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement('a');
@@ -2266,7 +2772,7 @@ export default function App() {
                       link.click();
                       document.body.removeChild(link);
                       URL.revokeObjectURL(url);
-                      alert(lang === 'en' ? 'Report downloaded successfully!' : '¡Reporte descargado con éxito!');
+                      addNotification(lang === 'en' ? 'Report downloaded successfully!' : '¡Reporte descargado con éxito!', 'operational');
                     }, 1500);
                   }}
                   disabled={isDownloading}
@@ -2454,9 +2960,10 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl bg-gradient-to-b from-[#121212] to-[#080808] border border-white/10 rounded-[40px] shadow-[0_0_80px_rgba(242,125,38,0.15)] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-2xl bg-gradient-to-b from-[#121212] to-[#080808] border border-white/10 rounded-[40px] shadow-[0_0_80px_rgba(242,125,38,0.15)] overflow-hidden flex flex-col max-h-[90vh]"
             >
-              <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5 backdrop-blur-md">
+              <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5 backdrop-blur-md sticky top-0 z-10">
                 <div className="flex items-center gap-4">
                   {modalLevel > 1 && (
                     <button 
@@ -2497,6 +3004,10 @@ export default function App() {
                      activeModal === 'ai-tasks' ? (lang === 'en' ? 'Pending AI Tasks' : 'Tareas IA Pendientes') :
                      activeModal === 'market-hubs' ? (lang === 'en' ? 'Active Market Hubs' : 'Hubs de Mercado Activos') :
                      activeModal === 'efficiency-report' ? (lang === 'en' ? 'Efficiency Report' : 'Reporte de Eficiencia') :
+                     activeModal === 'import-success' ? (lang === 'en' ? 'Import Successful' : 'Importación Exitosa') :
+                     activeModal === 'import-mapping' ? (lang === 'en' ? 'Data Mapping & Preview' : 'Mapeo y Vista Previa de Datos') :
+                     activeModal === 'contract-detail' ? (lang === 'en' ? 'Contract Details' : 'Detalles del Contrato') :
+                     activeModal === 'new-contract' ? (lang === 'en' ? 'New Contract' : 'Nuevo Contrato') :
                      activeModal?.replace(/-/g, ' ') || ''}
                 </h2>
               </div>
@@ -2512,9 +3023,267 @@ export default function App() {
               </button>
             </div>
             <div className="p-8 space-y-6 overflow-y-auto max-h-[70vh] scrollbar-hide">
+                {activeModal === 'import-success' && (
+                  <div className="p-8 text-center">
+                    <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/30">
+                      <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'Integration Complete' : 'Integración Completada'}
+                    </h3>
+                    <p className="text-white/60 mb-8">
+                      {lang === 'en' 
+                        ? `We've successfully integrated your data into the system. You can now manage your inventory and warehouse operations.`
+                        : `Hemos integrado con éxito sus datos en el sistema. Ahora puede gestionar su inventario y las operaciones de almacén.`}
+                    </p>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <button 
+                        onClick={() => {
+                          setActiveModal(null);
+                          setActiveTab('inventory');
+                        }}
+                        className="py-4 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Layers className="w-5 h-5" />
+                        {lang === 'en' ? 'Inventory' : 'Inventario'}
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setActiveModal(null);
+                          setActiveTab('warehouse');
+                        }}
+                        className="py-4 bg-white/5 text-white rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2 border border-white/10"
+                      >
+                        <Truck className="w-5 h-5" />
+                        {lang === 'en' ? 'Warehouse' : 'Almacén'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeModal === 'import-mapping' && importPreview && (
+                  <ErrorBoundary fallback={
+                    <div className="p-12 text-center space-y-4">
+                      <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
+                      <h3 className="text-xl font-bold text-white">Import Preview Error</h3>
+                      <p className="text-white/60">There was an error rendering the data preview. The file format might be unsupported.</p>
+                      <button 
+                        onClick={() => { setActiveModal(null); setImportPreview(null); }}
+                        className="px-6 py-3 bg-white/10 text-white rounded-xl font-bold"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  }>
+                    {(() => {
+                      const activeSheet = importPreview?.sheets?.[importPreview?.activeSheetIndex || 0];
+                      const previewData = activeSheet?.data?.slice(0, 5) || [];
+                      const columns = activeSheet?.data?.[0] ? Object.keys(activeSheet.data[0]) : [];
+
+                      return (
+                        <>
+                          <div className="flex-1 overflow-y-auto p-8 space-y-6 scrollbar-hide">
+                          <div className="flex items-center justify-between p-4 bg-porteo-orange/10 border border-porteo-orange/20 rounded-2xl">
+                            <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 bg-porteo-orange/20 rounded-xl flex items-center justify-center">
+                                <FileText className="w-6 h-6 text-porteo-orange" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold">{importPreview.fileName}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-white/40 text-xs">{activeSheet?.data?.length || 0} rows found</p>
+                                  <span className="w-1 h-1 bg-white/20 rounded-full" />
+                                  <p className={`text-xs font-bold ${importConfidence > 80 ? 'text-emerald-400' : importConfidence > 50 ? 'text-porteo-orange' : 'text-rose-400'}`}>
+                                    {importConfidence}% Match Confidence
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => setImportTargetType('inventory')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${importTargetType === 'inventory' ? 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                              >
+                                <Package className="w-3 h-3" />
+                                Inventory
+                              </button>
+                              <button 
+                                onClick={() => setImportTargetType('warehouse')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${importTargetType === 'warehouse' ? 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                              >
+                                <WarehouseIcon className="w-3 h-3" />
+                                Warehouse
+                              </button>
+                              <button 
+                                onClick={() => setImportTargetType('truck')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${importTargetType === 'truck' ? 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                              >
+                                <Truck className="w-3 h-3" />
+                                {lang === 'en' ? 'Trucks' : 'Camiones'}
+                              </button>
+                            </div>
+                          </div>
+
+                    <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-porteo-blue/20 rounded-lg flex items-center justify-center">
+                          <BrainCircuit className="w-4 h-4 text-porteo-blue" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">AI Detection</p>
+                          <p className="text-white text-sm font-bold">
+                            {importTargetType === 'inventory' ? (lang === 'en' ? 'Inventory & Stock' : 'Inventario y Stock') :
+                             importTargetType === 'warehouse' ? (lang === 'en' ? 'Warehouse Network' : 'Red de Almacenes') :
+                             (lang === 'en' ? 'Logistics & Trucks' : 'Logística y Camiones')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Confidence</p>
+                        <p className={`text-sm font-bold ${importConfidence > 80 ? 'text-emerald-400' : 'text-porteo-orange'}`}>{importConfidence}%</p>
+                      </div>
+                    </div>
+
+                    {importPreview.sheets.length > 1 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Select Sheet</p>
+                        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                          {importPreview.sheets.map((sheet, idx) => (
+                            <button
+                              key={sheet.name}
+                              onClick={() => {
+                                setImportPreview(prev => prev ? { ...prev, activeSheetIndex: idx } : null);
+                                setImportMapping({});
+                              }}
+                              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${importPreview.activeSheetIndex === idx ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-transparent text-white/40 hover:bg-white/10'}`}
+                            >
+                              {sheet.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-white font-bold flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-porteo-orange" />
+                          Smart Column Mapping
+                        </h4>
+                        <button 
+                          onClick={() => setImportMapping({})}
+                          className="text-[10px] font-bold text-white/40 hover:text-rose-400 uppercase tracking-widest transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(importTargetType === 'inventory' 
+                          ? ['sku', 'name', 'quantity', 'unit', 'location', 'palletId', 'customer', 'brand', 'category', 'oemNumber']
+                          : importTargetType === 'warehouse'
+                          ? ['name', 'location', 'market', 'capacity']
+                          : ['id', 'carrier', 'type', 'driver', 'status', 'dock', 'eta']
+                        ).map(field => {
+                          const isMatched = !!importMapping[field];
+                          return (
+                            <div key={field} className={`p-4 rounded-2xl border transition-all ${isMatched ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-white/5 border-white/10'}`}>
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-wider flex items-center gap-1">
+                                  {field === 'sku' ? (lang === 'en' ? 'SKU / Part #' : 'SKU / Parte') :
+                                   field === 'name' ? (lang === 'en' ? 'Description' : 'Descripción') :
+                                   field === 'quantity' ? (lang === 'en' ? 'Quantity' : 'Cantidad') :
+                                   field === 'unit' ? (lang === 'en' ? 'Unit' : 'Unidad') :
+                                   field === 'location' ? (lang === 'en' ? 'Location' : 'Ubicación') :
+                                   field === 'customer' ? (lang === 'en' ? 'Customer' : 'Cliente') :
+                                   field === 'carrier' ? (lang === 'en' ? 'Carrier' : 'Transportista') :
+                                   field === 'driver' ? (lang === 'en' ? 'Driver' : 'Chofer') :
+                                   field}
+                                  {(field === 'sku' || field === 'name' || field === 'id' || field === 'carrier') ? <span className="text-rose-400">*</span> : null}
+                                </label>
+                                {isMatched && (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                                    <ShieldCheck className="w-3 h-3" />
+                                    Auto-Detected
+                                  </span>
+                                )}
+                              </div>
+                              <select 
+                                value={importMapping[field] || ''}
+                                onChange={(e) => setImportMapping(prev => ({ ...prev, [field]: e.target.value }))}
+                                className={`w-full bg-black/20 border rounded-xl p-3 text-white text-sm outline-none transition-all ${isMatched ? 'border-emerald-500/30' : 'border-white/10 focus:border-porteo-orange'}`}
+                              >
+                                <option value="">Select Column...</option>
+                                {columns.map(col => (
+                                  <option key={col} value={col}>{col}</option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-white font-bold flex items-center gap-2">
+                        <Search className="w-4 h-4 text-porteo-orange" />
+                        Live Data Preview
+                      </h4>
+                      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-white/5 text-white/40">
+                            <tr>
+                              {columns.map(col => (
+                                <th key={col} className="p-3 font-bold whitespace-nowrap">{col}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="text-white/60">
+                            {previewData.map((row: any, i: number) => (
+                              <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors">
+                                {columns.map((col, j) => (
+                                  <td key={j} className="p-3 truncate max-w-[150px]">{row[col]?.toString() || '-'}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    </div>
+                    <div className="p-8 border-t border-white/10 bg-white/5 backdrop-blur-md flex gap-4 sticky bottom-0 z-10">
+                      <button 
+                        onClick={() => {
+                          setActiveModal(null);
+                          setImportPreview(null);
+                        }}
+                        className="flex-1 py-4 bg-white/5 text-white/60 rounded-2xl font-bold hover:bg-white/10 transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={executeMappedImport}
+                        disabled={((!importMapping['sku'] && importTargetType === 'inventory') || !importMapping['name'])}
+                        className={`flex-[2] py-4 rounded-2xl font-bold shadow-xl transition-all flex items-center justify-center gap-2 ${
+                          ((!importMapping['sku'] && importTargetType === 'inventory') || !importMapping['name'])
+                          ? 'bg-white/5 text-white/20 cursor-not-allowed'
+                          : 'bg-porteo-orange text-white shadow-porteo-orange/20 hover:scale-[1.02] active:scale-[0.98]'
+                        }`}
+                      >
+                        <Zap className="w-4 h-4" />
+                        {importConfidence === 100 ? 'Quick Import' : 'Complete Import'}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </ErrorBoundary>
+          )}
+
                 {activeModal === 'inbound' && (
                   <div className="space-y-4">
-                    <p className="text-white/60">Register new inbound shipment for {selectedWarehouse.name}</p>
+                    <p className="text-white/60">Register new inbound shipment for {selectedWarehouse?.name || 'Warehouse'}</p>
                     <div className="grid grid-cols-2 gap-4">
                       <input type="text" placeholder="Truck ID" className="bg-white/5 border border-white/10 rounded-xl p-3 text-white" />
                       <input type="text" placeholder="Carrier" className="bg-white/5 border border-white/10 rounded-xl p-3 text-white" />
@@ -2527,14 +3296,14 @@ export default function App() {
                           truckType: 'Full Truck',
                           customer: 'New Customer',
                           origin: 'External Factory',
-                          destination: selectedWarehouse.name,
+                          destination: selectedWarehouse?.name || 'Warehouse',
                           status: 'collection',
                           steps: [
                             { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'in-progress', timestamp: new Date().toISOString() }
                           ]
                         };
                         setTplProcesses(prev => [newOrder, ...prev]);
-                        alert(lang === 'en' ? 'Inbound order created! You can track it in the "Registered Orders" list on the dashboard.' : '¡Orden de entrada creada! Puede rastrearla en la lista de "Órdenes Registradas" en el dashboard.');
+                        addNotification(lang === 'en' ? 'Inbound order created! You can track it in the "Registered Orders" list on the dashboard.' : '¡Orden de entrada creada! Puede rastrearla en la lista de "Órdenes Registradas" en el dashboard.', 'operational');
                         setShowRegisteredOrders(true);
                         setActiveModal(null);
                       }}
@@ -2546,7 +3315,7 @@ export default function App() {
                 )}
                 {activeModal === 'outbound' && (
                   <div className="space-y-4">
-                    <p className="text-white/60">Schedule outbound delivery from {selectedWarehouse.name}</p>
+                    <p className="text-white/60">Schedule outbound delivery from {selectedWarehouse?.name || 'Warehouse'}</p>
                     <div className="grid grid-cols-2 gap-4">
                       <input type="text" placeholder="Order #" className="bg-white/5 border border-white/10 rounded-xl p-3 text-white" />
                       <input type="text" placeholder="Destination" className="bg-white/5 border border-white/10 rounded-xl p-3 text-white" />
@@ -2558,7 +3327,7 @@ export default function App() {
                           truckId: 'TRK-OUT',
                           truckType: 'Thorton',
                           customer: 'New Customer',
-                          origin: selectedWarehouse.name,
+                          origin: selectedWarehouse?.name || 'Warehouse',
                           destination: 'Customer Site',
                           status: 'picking',
                           steps: [
@@ -2566,7 +3335,7 @@ export default function App() {
                           ]
                         };
                         setTplProcesses(prev => [newOrder, ...prev]);
-                        alert(lang === 'en' ? 'Outbound delivery scheduled! You can track it in the "Registered Orders" list on the dashboard.' : '¡Entrega de salida programada! Puede rastrearla en la lista de "Órdenes Registradas" en el dashboard.');
+                        addNotification(lang === 'en' ? 'Outbound delivery scheduled! You can track it in the "Registered Orders" list on the dashboard.' : '¡Entrega de salida programada! Puede rastrearla en la lista de "Órdenes Registradas" en el dashboard.', 'operational');
                         setShowRegisteredOrders(true);
                         setActiveModal(null);
                       }}
@@ -2593,7 +3362,7 @@ export default function App() {
                     </div>
                     <button 
                       onClick={() => {
-                        alert(lang === 'en' ? 'Item saved to inventory!' : '¡Item guardado en el inventario!');
+                        addNotification(lang === 'en' ? 'Item saved to inventory!' : '¡Item guardado en el inventario!', 'operational');
                         setActiveModal(null);
                       }}
                       className="w-full py-3 bg-porteo-orange text-white rounded-xl font-bold"
@@ -2607,25 +3376,27 @@ export default function App() {
                     <label className="border-2 border-dashed border-white/10 rounded-3xl p-12 flex flex-col items-center justify-center gap-4 hover:border-porteo-orange/50 transition-all cursor-pointer">
                       <input type="file" className="hidden" onChange={(e) => {
                         if (e.target.files?.[0]) {
-                          alert(lang === 'en' ? `File ${e.target.files[0].name} selected for import!` : `¡Archivo ${e.target.files[0].name} seleccionado para importar!`);
+                          handleGlobalDataImport(e.target.files[0]);
+                          setActiveModal(null);
                         }
-                      }} />
+                      }} accept=".xlsx,.xls,.csv" />
                       <Download className="w-12 h-12 text-white/20" />
                       <p className="text-white/60 text-center">Click or drag and drop your CSV, Excel, or Sheets file here<br/><span className="text-xs opacity-50">Max file size: 10MB</span></p>
                     </label>
                     <div className="flex gap-4">
-                      <button className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10">Download Template</button>
                       <button 
                         onClick={() => {
-                          alert(lang === 'en' ? 'Processing import...' : 'Procesando importación...');
-                          setTimeout(() => {
-                            alert(lang === 'en' ? 'Import completed! 150 items added.' : '¡Importación completada! 150 items agregados.');
-                            setActiveModal(null);
-                          }, 1500);
+                          const csvContent = "SKU,Name,Quantity,Unit,Location,PalletId,Customer\nSKU001,Sample Item,100,units,A-01-01,P-001,Sample Customer";
+                          const blob = new Blob([csvContent], { type: 'text/csv' });
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = "inventory_template.csv";
+                          a.click();
                         }}
-                        className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold"
+                        className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
                       >
-                        Process Import
+                        Download Template
                       </button>
                     </div>
                   </div>
@@ -2701,16 +3472,80 @@ export default function App() {
 
                     <div className="flex gap-4">
                       <button 
-                        onClick={() => alert(lang === 'en' ? 'Opening Edit Mode...' : 'Abriendo Modo Edición...')}
+                        onClick={() => addNotification(lang === 'en' ? 'Opening Edit Mode...' : 'Abriendo Modo Edición...', 'operational')}
                         className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
                       >
                         Edit Item
                       </button>
                       <button 
-                        onClick={() => alert(lang === 'en' ? 'Initiating Pallet Relocation...' : 'Iniciando Reubicación de Pallet...')}
+                        onClick={() => setActiveModal('move-pallet')}
                         className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold"
                       >
                         Move Pallet
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {activeModal === 'move-pallet' && selectedInventoryItem && (
+                  <div className="space-y-6">
+                    <div className="p-6 bg-porteo-orange/10 border border-porteo-orange/30 rounded-3xl">
+                      <h4 className="text-lg font-bold text-white mb-2">{lang === 'en' ? 'Relocate Pallet' : 'Reubicar Pallet'}</h4>
+                      <p className="text-sm text-white/60">
+                        {lang === 'en' 
+                          ? `Moving ${selectedInventoryItem.sku} from ${selectedInventoryItem.location}` 
+                          : `Moviendo ${selectedInventoryItem.sku} desde ${selectedInventoryItem.location}`}
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'New Target Location' : 'Nueva Ubicación Destino'}</label>
+                      <div className="relative">
+                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-porteo-orange" />
+                        <input 
+                          type="text" 
+                          placeholder="e.g. B-04-12" 
+                          value={newLocation}
+                          onChange={(e) => setNewLocation(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white font-bold focus:border-porteo-orange/50 outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <p className="text-[10px] text-white/40 uppercase font-bold mb-3">{lang === 'en' ? 'Suggested Locations (AI)' : 'Ubicaciones Sugeridas (IA)'}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['A-02-05', 'A-01-12', 'B-03-01'].map(loc => (
+                          <button 
+                            key={loc}
+                            onClick={() => setNewLocation(loc)}
+                            className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${newLocation === loc ? 'bg-porteo-orange border-porteo-orange text-white' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
+                          >
+                            {loc}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <button 
+                        onClick={() => setActiveModal('inventory-detail')}
+                        className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
+                      >
+                        {lang === 'en' ? 'Cancel' : 'Cancelar'}
+                      </button>
+                      <button 
+                        disabled={!newLocation || isMovingPallet}
+                        onClick={handleMovePallet}
+                        className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isMovingPallet ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full" />
+                            {lang === 'en' ? 'Moving...' : 'Moviendo...'}
+                          </>
+                        ) : (
+                          lang === 'en' ? 'Confirm Move' : 'Confirmar Movimiento'
+                        )}
                       </button>
                     </div>
                   </div>
@@ -2815,7 +3650,7 @@ export default function App() {
                     <button 
                       onClick={() => {
                         if (!gateEntryForm.truckId || !gateEntryForm.driverName) {
-                          alert(lang === 'en' ? 'Please fill in required fields.' : 'Por favor llene los campos requeridos.');
+                          addNotification(lang === 'en' ? 'Please fill in required fields.' : 'Por favor llene los campos requeridos.', 'alert');
                           return;
                         }
                         const newTruck = {
@@ -2829,7 +3664,7 @@ export default function App() {
                           idling: false
                         };
                         setTrucks([newTruck, ...trucks]);
-                        alert(lang === 'en' ? 'Truck registered and synchronized with TMS.' : 'Camión registrado y sincronizado con TMS.');
+                        addNotification(lang === 'en' ? 'Truck registered and synchronized with TMS.' : 'Camión registrado y sincronizado con TMS.', 'operational');
                         setActiveModal(null);
                         setGateEntryForm({
                           truckId: '',
@@ -3054,7 +3889,7 @@ export default function App() {
                               setIsProcessing(true);
                               setTimeout(() => {
                                 setIsProcessing(false);
-                                alert(lang === 'en' ? 'Shift allocation optimized. Resources redistributed to Night Shift.' : 'Asignación de turnos optimizada. Recursos redistribuidos al Turno Nocturno.');
+                                addNotification(lang === 'en' ? 'Shift allocation optimized. Resources redistributed to Night Shift.' : 'Asignación de turnos optimizada. Recursos redistribuidos al Turno Nocturno.', 'operational');
                               }, 2000);
                             }}
                             className="flex-[2] py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-all disabled:opacity-50 shadow-lg shadow-porteo-orange/20"
@@ -3149,28 +3984,28 @@ export default function App() {
                           <h5 className="text-xs font-bold text-white/40 uppercase tracking-widest">Administrative Actions</h5>
                           <div className="grid grid-cols-2 gap-3">
                             <button 
-                              onClick={() => alert(lang === 'en' ? `Re-assignment process started for ${selectedStaff.name}` : `Proceso de reasignación iniciado para ${selectedStaff.name}`)}
+                              onClick={() => addNotification(lang === 'en' ? `Re-assignment process started for ${selectedStaff.name}` : `Proceso de reasignación iniciado para ${selectedStaff.name}`, 'operational')}
                               className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white text-sm font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                             >
                               <RefreshCw className="w-4 h-4 text-porteo-blue" />
                               {lang === 'en' ? 'Re-assign' : 'Reasignar'}
                             </button>
                             <button 
-                              onClick={() => alert(lang === 'en' ? `Shift switch request sent for ${selectedStaff.name}` : `Solicitud de cambio de turno enviada para ${selectedStaff.name}`)}
+                              onClick={() => addNotification(lang === 'en' ? `Shift switch request sent for ${selectedStaff.name}` : `Solicitud de cambio de turno enviada para ${selectedStaff.name}`, 'operational')}
                               className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white text-sm font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                             >
                               <Clock className="w-4 h-4 text-porteo-orange" />
                               {lang === 'en' ? 'Switch Shift' : 'Cambiar Turno'}
                             </button>
                             <button 
-                              onClick={() => alert(lang === 'en' ? `Move request registered for ${selectedStaff.name}` : `Solicitud de movimiento registrada para ${selectedStaff.name}`)}
+                              onClick={() => addNotification(lang === 'en' ? `Move request registered for ${selectedStaff.name}` : `Solicitud de movimiento registrada para ${selectedStaff.name}`, 'operational')}
                               className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white text-sm font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                             >
                               <Move className="w-4 h-4 text-emerald-500" />
                               {lang === 'en' ? 'Make a Move' : 'Hacer Movimiento'}
                             </button>
                             <button 
-                              onClick={() => alert(lang === 'en' ? `Full profile report generated for ${selectedStaff.name}` : `Reporte de perfil completo generado para ${selectedStaff.name}`)}
+                              onClick={() => addNotification(lang === 'en' ? `Full profile report generated for ${selectedStaff.name}` : `Reporte de perfil completo generado para ${selectedStaff.name}`, 'operational')}
                               className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white text-sm font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                             >
                               <FileText className="w-4 h-4 text-white/40" />
@@ -3574,7 +4409,7 @@ export default function App() {
                             setIsSyncingSystems(true);
                             setTimeout(() => {
                               setIsSyncingSystems(false);
-                              alert(lang === 'en' ? 'All systems synchronized successfully.' : 'Todos los sistemas sincronizados con éxito.');
+                              addNotification(lang === 'en' ? 'All systems synchronized successfully.' : 'Todos los sistemas sincronizados con éxito.', 'operational');
                             }, 2000);
                           }}
                           className="w-full py-3 bg-porteo-blue text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
@@ -3654,7 +4489,7 @@ export default function App() {
                             onClick={() => {
                               const endpoint = prompt(lang === 'en' ? 'Enter new API endpoint:' : 'Ingrese nuevo endpoint de API:', `https://api.porteo.com/v4/sync/${(selectedSubItem?.name?.toLowerCase() || '').replace(' ', '-')}`);
                               if (endpoint) {
-                                alert(lang === 'en' ? 'Configuration updated.' : 'Configuración actualizada.');
+                                addNotification(lang === 'en' ? 'Configuration updated.' : 'Configuración actualizada.', 'operational');
                               }
                             }}
                             className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
@@ -3667,7 +4502,7 @@ export default function App() {
                               setIsProcessing(true);
                               setTimeout(() => {
                                 setIsProcessing(false);
-                                alert(lang === 'en' ? 'Connection re-authenticated successfully.' : 'Conexión re-autenticada con éxito.');
+                                addNotification(lang === 'en' ? 'Connection re-authenticated successfully.' : 'Conexión re-autenticada con éxito.', 'operational');
                               }, 1500);
                             }}
                             className="flex-1 py-3 bg-porteo-blue text-white rounded-xl font-bold disabled:opacity-50"
@@ -3917,7 +4752,7 @@ export default function App() {
                                 document.body.appendChild(element);
                                 element.click();
                                 setIsDownloading(false);
-                                alert(lang === 'en' ? 'Encrypted file downloaded successfully.' : 'Archivo cifrado descargado con éxito.');
+                                addNotification(lang === 'en' ? 'Encrypted file downloaded successfully.' : 'Archivo cifrado descargado con éxito.', 'operational');
                               }, 1500);
                             }}
                             disabled={isDownloading}
@@ -3968,9 +4803,9 @@ export default function App() {
                           </button>
                           <button 
                             onClick={() => {
-                              alert(lang === 'en' ? 'Exporting audit trail to CSV...' : 'Exportando historial de auditoría a CSV...');
+                              addNotification(lang === 'en' ? 'Exporting audit trail to CSV...' : 'Exportando historial de auditoría a CSV...', 'operational');
                               setTimeout(() => {
-                                alert(lang === 'en' ? 'Audit trail exported successfully.' : 'Historial de auditoría exportado con éxito.');
+                                addNotification(lang === 'en' ? 'Audit trail exported successfully.' : 'Historial de auditoría exportado con éxito.', 'operational');
                               }, 1000);
                             }}
                             className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold"
@@ -4150,7 +4985,7 @@ export default function App() {
                                 setIsProcessing(true);
                                 setTimeout(() => {
                                   setIsProcessing(false);
-                                  alert(lang === 'en' ? 'All logistics routes synchronized with city traffic data. 3 routes updated.' : 'Todas las rutas logísticas sincronizadas con datos de tráfico de la ciudad. 3 rutas actualizadas.');
+                                  addNotification(lang === 'en' ? 'All logistics routes synchronized with city traffic data. 3 routes updated.' : 'Todas las rutas logísticas sincronizadas con datos de tráfico de la ciudad. 3 rutas actualizadas.', 'operational');
                                 }, 2000);
                               }}
                               className="py-3 bg-emerald-500 text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
@@ -4305,7 +5140,7 @@ export default function App() {
                             onClick={() => {
                               const reason = prompt('Reason for rejection:');
                               if (reason) {
-                                alert('Task rejected and archived.');
+                                addNotification('Task rejected and archived.', 'operational');
                                 setModalLevel(1);
                               }
                             }}
@@ -4315,7 +5150,7 @@ export default function App() {
                           </button>
                           <button 
                             onClick={() => {
-                              alert('Task sent for secondary supervisor approval.');
+                              addNotification('Task sent for secondary supervisor approval.', 'operational');
                               setModalLevel(1);
                             }}
                             className="py-3 bg-porteo-blue/20 border border-porteo-blue/30 text-porteo-blue rounded-xl font-bold hover:bg-porteo-blue/30 transition-all"
@@ -4326,7 +5161,7 @@ export default function App() {
                             onClick={() => {
                               const newVal = prompt('Edit task parameters:', selectedTask.task);
                               if (newVal) {
-                                alert('Task parameters updated. Re-calculating impact...');
+                                addNotification('Task parameters updated. Re-calculating impact...', 'operational');
                               }
                             }}
                             className="py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all"
@@ -4413,10 +5248,10 @@ export default function App() {
                         <div className="space-y-3">
                           <h5 className="text-xs font-bold text-white/40 uppercase tracking-widest">Hub Actions</h5>
                           <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => alert('Optimizing hub distribution...')} className="p-3 bg-porteo-blue text-white rounded-xl text-xs font-bold hover:bg-porteo-blue/80 transition-all">Optimize Distribution</button>
-                            <button onClick={() => alert('Requesting maintenance scan...')} className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all">Facility Scan</button>
-                            <button onClick={() => alert('Opening real-time traffic sync...')} className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all">Traffic Sync</button>
-                            <button onClick={() => alert('Exporting hub performance report...')} className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all">Export Report</button>
+                            <button onClick={() => addNotification('Optimizing hub distribution...', 'operational')} className="p-3 bg-porteo-blue text-white rounded-xl text-xs font-bold hover:bg-porteo-blue/80 transition-all">Optimize Distribution</button>
+                            <button onClick={() => addNotification('Requesting maintenance scan...', 'operational')} className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all">Facility Scan</button>
+                            <button onClick={() => addNotification('Opening real-time traffic sync...', 'operational')} className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all">Traffic Sync</button>
+                            <button onClick={() => addNotification('Exporting hub performance report...', 'operational')} className="p-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all">Export Report</button>
                           </div>
                         </div>
 
@@ -4501,7 +5336,7 @@ export default function App() {
                           setIsProcessing(true);
                           setTimeout(() => {
                             setIsProcessing(false);
-                            alert('Deep optimization scan completed. 4 new bottlenecks identified.');
+                            addNotification('Deep optimization scan completed. 4 new bottlenecks identified.', 'operational');
                           }, 3000);
                         }}
                         className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
@@ -4544,9 +5379,9 @@ export default function App() {
                             const name = options[Math.floor(Math.random() * options.length)];
                             if (!ecommerceIntegrations.find(i => i.name === name)) {
                               setEcommerceIntegrations([...ecommerceIntegrations, { name, status: 'connected' }]);
-                              alert(lang === 'en' ? `Integration with ${name} established successfully.` : `Integración con ${name} establecida con éxito.`);
+                              addNotification(lang === 'en' ? `Integration with ${name} established successfully.` : `Integración con ${name} establecida con éxito.`, 'operational');
                             } else {
-                              alert(lang === 'en' ? `${name} is already integrated.` : `${name} ya está integrado.`);
+                              addNotification(lang === 'en' ? `${name} is already integrated.` : `${name} ya está integrado.`, 'operational');
                             }
                           }}
                           className="w-full py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
@@ -4565,7 +5400,7 @@ export default function App() {
                           setIsProcessing(true);
                           setTimeout(() => {
                             setIsProcessing(false);
-                            alert(lang === 'en' ? 'All e-commerce channels synchronized successfully.' : 'Todos los canales de e-commerce sincronizados con éxito.');
+                            addNotification(lang === 'en' ? 'All e-commerce channels synchronized successfully.' : 'Todos los canales de e-commerce sincronizados con éxito.', 'operational');
                           }, 2000);
                         }}
                         className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/80 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
@@ -4671,14 +5506,14 @@ export default function App() {
 
                         <div className="flex gap-3">
                           <button 
-                            onClick={() => alert(lang === 'en' ? 'Generating 12-month financial forecast...' : 'Generando pronóstico financiero de 12 meses...')}
+                            onClick={() => addNotification(lang === 'en' ? 'Generating 12-month financial forecast...' : 'Generando pronóstico financiero de 12 meses...', 'operational')}
                             className="px-6 py-2 bg-porteo-blue text-white rounded-full text-xs font-bold hover:bg-porteo-blue/80 transition-all"
                           >
                             {lang === 'en' ? 'Generate Forecast' : 'Generar Pronóstico'}
                           </button>
                           <button 
                             onClick={() => {
-                              alert(lang === 'en' ? 'Exporting financial data to CSV...' : 'Exportando datos financieros a CSV...');
+                              addNotification(lang === 'en' ? 'Exporting financial data to CSV...' : 'Exportando datos financieros a CSV...', 'operational');
                               const link = document.createElement('a');
                               link.href = '#';
                               link.download = 'financial_data.csv';
@@ -4811,7 +5646,7 @@ export default function App() {
                     <button 
                       onClick={() => {
                         if (!newWarehouseData.name || !newWarehouseData.location) {
-                          alert(lang === 'en' ? 'Please fill in all fields' : 'Por favor complete todos los campos');
+                          addNotification(lang === 'en' ? 'Please fill in all fields' : 'Por favor complete todos los campos', 'alert');
                           return;
                         }
                         const newWh: Warehouse = {
@@ -4876,7 +5711,7 @@ export default function App() {
                               onClick={() => {
                                 const updatedTrucks = trucks.map(t => t.id === selectedSubItem.truck ? { ...t, status: 'Unloading' } : t);
                                 setTrucks(updatedTrucks);
-                                alert(lang === 'en' ? 'Unloading process started.' : 'Proceso de descarga iniciado.');
+                                addNotification(lang === 'en' ? 'Unloading process started.' : 'Proceso de descarga iniciado.', 'operational');
                                 setActiveModal(null);
                               }}
                               className="py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all"
@@ -4887,7 +5722,7 @@ export default function App() {
                               onClick={() => {
                                 const updatedTrucks = trucks.map(t => t.id === selectedSubItem.truck ? { ...t, status: 'Waiting', dock: '-' } : t);
                                 setTrucks(updatedTrucks);
-                                alert(lang === 'en' ? 'Truck moved back to yard.' : 'Camión movido de vuelta al patio.');
+                                addNotification(lang === 'en' ? 'Truck moved back to yard.' : 'Camión movido de vuelta al patio.', 'operational');
                                 setActiveModal(null);
                               }}
                               className="py-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
@@ -4905,7 +5740,7 @@ export default function App() {
                           onClick={() => {
                             setActiveModal(null);
                             setTruckStatusFilter('Waiting');
-                            alert(lang === 'en' ? 'Please select a waiting truck from the list to assign.' : 'Por favor seleccione un camión en espera de la lista para asignar.');
+                            addNotification(lang === 'en' ? 'Please select a waiting truck from the list to assign.' : 'Por favor seleccione un camión en espera de la lista para asignar.', 'alert');
                           }}
                           className="mt-6 px-6 py-3 bg-porteo-orange text-white rounded-xl text-xs font-bold hover:bg-porteo-orange/80 transition-all"
                         >
@@ -4960,7 +5795,7 @@ export default function App() {
                             : (lang === 'en' ? `Audit Complete for Rack ${id}. No items found in this location.` : `Auditoría Completa para Rack ${id}. No se encontraron items en esta ubicación.`);
                           
                           setTimeout(() => {
-                            alert(summary);
+                            addNotification(summary, 'operational');
                           }, 3000);
                         }}
                         className="py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10 cursor-pointer relative z-[160]"
@@ -4985,12 +5820,12 @@ export default function App() {
                               return item;
                             }));
                             setTimeout(() => {
-                              alert(lang === 'en' 
+                              addNotification(lang === 'en' 
                                 ? `Relocation Successful! ${itemsToMove.length} items from Rack ${id} moved to ZONE-A-04-B for optimization.` 
-                                : `¡Reubicación Exitosa! ${itemsToMove.length} items del Rack ${id} movidos a ZONE-A-04-B para optimización.`);
+                                : `¡Reubicación Exitosa! ${itemsToMove.length} items del Rack ${id} movidos a ZONE-A-04-B para optimización.`, 'operational');
                             }, 4000);
                           } else {
-                            alert(lang === 'en' ? `No items found in Rack ${id} to relocate.` : `No se encontraron items en el Rack ${id} para reubicar.`);
+                            addNotification(lang === 'en' ? `No items found in Rack ${id} to relocate.` : `No se encontraron items en el Rack ${id} para reubicar.`, 'alert');
                           }
                         }}
                         className="py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 cursor-pointer relative z-[160]"
@@ -5037,7 +5872,7 @@ export default function App() {
                             : p
                         ));
                         
-                        alert(lang === 'en' ? 'Status updated successfully!' : '¡Estatus actualizado con éxito!');
+                        addNotification(lang === 'en' ? 'Status updated successfully!' : '¡Estatus actualizado con éxito!', 'operational');
                         setActiveModal(null);
                       }}
                       className="w-full py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/80 transition-all"
@@ -5088,7 +5923,7 @@ export default function App() {
                         <div 
                           key={i} 
                           onClick={() => {
-                            alert(lang === 'en' ? `Downloading ${doc}...` : `Descargando ${doc}...`);
+                            addNotification(lang === 'en' ? `Downloading ${doc}...` : `Descargando ${doc}...`, 'operational');
                           }}
                           className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-orange/50 cursor-pointer group transition-all"
                         >
@@ -5115,7 +5950,7 @@ export default function App() {
                             setTplProcesses(prev => prev.map(p => p.id === updatedShipment.id ? updatedShipment : p));
                             addNotification(lang === 'en' ? `Document ${fileName} uploaded successfully.` : `Documento ${fileName} subido con éxito.`, 'operational');
                           }
-                        }} />
+                        }} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xlsx,.xls,.csv" />
                       </label>
                     </div>
                   </div>
@@ -5159,9 +5994,165 @@ export default function App() {
                     <button className="w-full py-3 bg-porteo-orange text-white rounded-xl font-bold">Reassign Resources</button>
                   </div>
                 )}
+
+                {activeModal === 'contract-detail' && selectedContract && (
+                  <div className="space-y-8">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="text-2xl font-bold text-white mb-1">{selectedContract.partyName}</h3>
+                        <p className="text-sm text-white/40 uppercase tracking-widest font-bold">{selectedContract.type} Contract • {selectedContract.id}</p>
+                      </div>
+                      <div className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest ${
+                        selectedContract.status === 'active' ? 'bg-emerald-500/20 text-emerald-500' :
+                        selectedContract.status === 'pending_renewal' ? 'bg-amber-500/20 text-amber-500' :
+                        'bg-white/10 text-white/40'
+                      }`}>
+                        {selectedContract.status.replace('_', ' ')}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="glass p-6 rounded-3xl">
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-2">Contract Value</p>
+                        <p className="text-2xl font-bold text-white">{selectedContract.currency} {selectedContract.value?.toLocaleString()}</p>
+                      </div>
+                      <div className="glass p-6 rounded-3xl">
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-2">Start Date</p>
+                        <p className="text-xl font-bold text-white">{selectedContract.startDate}</p>
+                      </div>
+                      <div className="glass p-6 rounded-3xl">
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-2">End Date</p>
+                        <p className="text-xl font-bold text-white">{selectedContract.endDate}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-bold text-white">Contract Metadata</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <span className="text-sm text-white/40">Auto-Renewal</span>
+                          <span className="text-sm font-bold text-white">{selectedContract.autoRenew ? 'Enabled' : 'Disabled'}</span>
+                        </div>
+                        <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <span className="text-sm text-white/40">Payment Terms</span>
+                          <span className="text-sm font-bold text-white">Net 30</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <button className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2">
+                        <FileText className="w-5 h-5" />
+                        View Full Document
+                      </button>
+                      <button className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all">
+                        Edit Contract
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeModal === 'new-contract' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Party Name</label>
+                        <input type="text" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white outline-none focus:border-porteo-orange/50" placeholder="e.g. Global Logistics Inc" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Contract Type</label>
+                        <select className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white outline-none focus:border-porteo-orange/50">
+                          <option value="customer">Customer</option>
+                          <option value="supplier">Supplier</option>
+                          <option value="service">Service Provider</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Start Date</label>
+                        <input type="date" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white outline-none focus:border-porteo-orange/50" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-white/40 uppercase tracking-widest">End Date</label>
+                        <input type="date" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white outline-none focus:border-porteo-orange/50" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Contract Value</label>
+                        <input type="number" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white outline-none focus:border-porteo-orange/50" placeholder="0.00" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Currency</label>
+                        <select className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white outline-none focus:border-porteo-orange/50">
+                          <option value="USD">USD</option>
+                          <option value="MXN">MXN</option>
+                          <option value="EUR">EUR</option>
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <input type="checkbox" className="w-4 h-4 rounded border-white/10 bg-white/5 text-porteo-orange focus:ring-porteo-orange" />
+                      <label className="text-sm text-white/60">Enable Auto-Renewal</label>
+                    </div>
+
+                    <div className="pt-6 flex gap-4">
+                      <button 
+                        onClick={() => {
+                          addNotification('Contract created successfully', 'success');
+                          setActiveModal(null);
+                        }}
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all"
+                      >
+                        Create Contract
+                      </button>
+                      <button 
+                        onClick={() => setActiveModal(null)}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {(isImporting || isProcessing) && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[400] bg-black/80 backdrop-blur-xl flex flex-col items-center justify-center text-center p-8"
+          >
+            <div className="w-24 h-24 bg-porteo-orange/20 rounded-full flex items-center justify-center mb-8 border border-porteo-orange/30">
+              <RefreshCw className="w-12 h-12 text-porteo-orange animate-spin" />
+            </div>
+            <h3 className="text-3xl font-bold text-white mb-4">
+              {isImporting 
+                ? (lang === 'en' ? 'Importing Global Data' : 'Importando Datos Globales')
+                : (lang === 'en' ? 'Processing Data' : 'Procesando Datos')}
+            </h3>
+            <p className="text-white/60 max-w-md text-lg">
+              {isImporting
+                ? (lang === 'en' 
+                  ? 'AI is parsing your Excel file and building the warehouse network architecture.' 
+                  : 'La IA está analizando su archivo Excel y construyendo la arquitectura de la red de almacenes.')
+                : (lang === 'en'
+                  ? 'Optimizing and integrating your data into the WMS ecosystem.'
+                  : 'Optimizando e integrando sus datos en el ecosistema WMS.')}
+            </p>
+            <div className="mt-12 w-80 bg-white/5 h-1.5 rounded-full overflow-hidden border border-white/10">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: '100%' }}
+                transition={{ duration: isImporting ? 5 : 2, ease: "easeInOut" }}
+                className="bg-porteo-orange h-full shadow-[0_0_20px_rgba(242,125,38,0.5)]"
+              />
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -5221,6 +6212,7 @@ export default function App() {
           }
           setIsNotificationsOpen(false);
         }}
+        addNotification={addNotification}
       />
 
       {/* AI Assistants Floating Interface - Refactored to avoid blocking UI */}
@@ -5233,25 +6225,27 @@ export default function App() {
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               className="pointer-events-auto flex flex-col items-end gap-3 mb-2"
             >
-              <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse.name}, Occupancy: ${selectedWarehouse.currentOccupancy}/${selectedWarehouse.capacity}, Status: ${selectedWarehouse.status}`} />
-              <AIAssistant role="Warehouse Director" language={lang} context={`Warehouse: ${selectedWarehouse.name}, Layout: ${selectedWarehouse.layout.racks.rows}x${selectedWarehouse.layout.racks.cols}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
-                setIsProcessing(true);
-                addNotification(lang === 'en' ? `AI Director is analyzing ${file.name}...` : `El Director de IA está analizando ${file.name}...`, 'operational');
-                setTimeout(() => {
-                  const rows = Math.floor(Math.random() * 4) + 8;
-                  const cols = Math.floor(Math.random() * 6) + 12;
-                  const updatedWh = {
-                    ...selectedWarehouse,
-                    layout: {
-                      ...selectedWarehouse.layout,
-                      racks: { rows, cols }
-                    }
-                  };
-                  setSelectedWarehouse(updatedWh);
-                  setWarehouses(prev => prev.map(w => w.id === updatedWh.id ? updatedWh : w));
-                  setIsProcessing(false);
-                  addNotification(lang === 'en' ? `AI Director optimized layout based on ${file.name}!` : `¡El Director de IA optimizó el diseño basado en ${file.name}!`, 'operational');
-                }, 3000);
+              <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse?.name || 'None'}, Occupancy: ${selectedWarehouse?.currentOccupancy || 0}/${selectedWarehouse?.capacity || 0}, Status: ${selectedWarehouse?.status || 'N/A'}`} />
+              <AIAssistant role="Warehouse Director" language={lang} context={`Warehouse: ${selectedWarehouse?.name || 'None'}, Layout: ${selectedWarehouse?.layout?.racks?.rows || 0}x${selectedWarehouse?.layout?.racks?.cols || 0}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
+                if (selectedWarehouse) {
+                  setIsProcessing(true);
+                  addNotification(lang === 'en' ? `AI Director is analyzing ${file.name}...` : `El Director de IA está analizando ${file.name}...`, 'operational');
+                  setTimeout(() => {
+                    const rows = Math.floor(Math.random() * 4) + 8;
+                    const cols = Math.floor(Math.random() * 6) + 12;
+                    const updatedWh = {
+                      ...selectedWarehouse,
+                      layout: {
+                        ...selectedWarehouse.layout,
+                        racks: { rows, cols }
+                      }
+                    };
+                    setSelectedWarehouse(updatedWh);
+                    setWarehouses(prev => prev.map(w => w.id === updatedWh.id ? updatedWh : w));
+                    setIsProcessing(false);
+                    addNotification(lang === 'en' ? `AI Director optimized layout based on ${file.name}!` : `¡El Director de IA optimizó el diseño basado en ${file.name}!`, 'operational');
+                  }, 3000);
+                }
               }} />
               <AIAssistant role="Supply Chain Director" language={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
               <AIAssistant role="COO Assistant" language={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />

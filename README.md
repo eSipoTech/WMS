@@ -47,10 +47,22 @@ The application needs a **Gemini API Key** to power its AI features.
 
 ---
 
-## ⚙️ Configuration
+## 📊 Data Import & Setup
 
-### Permissions
-If your app needs to use the camera, microphone, or location, these are configured in the `metadata.json` file under `requestFramePermissions`.
+Porteo WMS is designed to be data-driven. You can initialize the system by uploading an Excel (`.xlsx`) file.
+
+### How to Import Data:
+1.  Navigate to the **Administration** tab in the sidebar.
+2.  Select **System Admin** or **Layout Management**.
+3.  Use the **"Global Data Import"** button.
+4.  The system accepts Excel files with the following sheets:
+    *   `Warehouses`: Columns: `name`, `location`, `market` (MEXICO/USA), `capacity`.
+    *   `Inventory`: Columns: `sku`, `name`, `quantity`, `unit`, `customer`.
+    *   `Pricing`: Columns: `customerId`, `sku`, `basePrice`.
+
+The system will automatically detect the market (e.g., Mexico) and create the necessary warehouse structures and inventory records.
+
+---
 
 ## 🛠️ Running the Application
 
@@ -75,25 +87,6 @@ When you are ready to put the app on a real server for users:
     ```bash
     npx serve -s dist
     ```
-
----
-
-## 📁 Project Structure Overview
-
-*   **/src**: This is where all the "magic" happens.
-    *   `App.tsx`: The main brain of the application.
-    *   `/components`: Reusable parts of the UI (buttons, cards, etc.).
-    *   `/services`: Logic for AI and data processing.
-*   **/public**: Static assets like images and icons.
-*   `package.json`: The list of all ingredients (libraries) used in the app.
-
----
-
-## ❓ Troubleshooting
-
-*   **Error: "module not found"**: Run `npm install` again.
-*   **AI features not working**: Double-check your `.env` file and ensure the `GEMINI_API_KEY` is correct.
-*   **Port 3000 already in use**: You can change the port in `package.json` under the `dev` script.
 
 ---
 

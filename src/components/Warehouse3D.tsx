@@ -56,9 +56,10 @@ interface Warehouse3DProps {
   onAuditRack?: (rackId: string) => void;
   onRelocateItems?: (rackId: string) => void;
   externalAction?: { type: 'audit' | 'relocate', rackId: string, timestamp: number } | null;
+  addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateItems, externalAction }: Warehouse3DProps) => {
+export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateItems, externalAction, addNotification }: Warehouse3DProps) => {
   const [selectedRack, setSelectedRack] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'normal' | 'heatmap' | 'status'>('normal');
   const [isScanning, setIsScanning] = useState(false);
@@ -247,7 +248,7 @@ export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateI
                       e.stopPropagation();
                       setIsScanning(true);
                       setActionResult(null);
-                      alert(`SUCCESS: Audit Track initiated for Rack ${selectedRack}. Scanning unit...`);
+                      addNotification(`SUCCESS: Audit Track initiated for Rack ${selectedRack}. Scanning unit...`, 'success');
                       onAuditRack?.(selectedRack);
                     }}
                     className="text-[10px] bg-white/10 py-2 rounded-xl font-bold hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center gap-2"
@@ -261,7 +262,7 @@ export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateI
                       e.stopPropagation();
                       setIsRelocating(true);
                       setActionResult(null);
-                      alert(`SUCCESS: Relocation workflow started for Rack ${selectedRack}. AI pathfinding active.`);
+                      addNotification(`SUCCESS: Relocation workflow started for Rack ${selectedRack}. AI pathfinding active.`, 'success');
                       onRelocateItems?.(selectedRack);
                     }}
                     className="text-[10px] bg-white/10 py-2 rounded-xl font-bold hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center gap-2"

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 import { 
   BarChart, 
   Bar, 
@@ -45,9 +46,10 @@ interface FinancialsProps {
   financialData: any[];
   pieData: any[];
   colors: string[];
+  addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: propsFinancialData, pieData: propsPieData, colors }) => {
+export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: propsFinancialData, pieData: propsPieData, colors, addNotification }) => {
   const [financialData, setFinancialData] = useState(propsFinancialData);
   const [pieData, setPieData] = useState(propsPieData);
 
@@ -96,33 +98,42 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
+      const file = e.target.files[0];
       setIsProcessing(true);
-      // Simulate reading and updating state with significant changes
-      setTimeout(() => {
-        const newData = financialData.map(d => {
-          const revMult = 1.5 + Math.random() * 0.5; // Significant increase
-          const costMult = 0.7 + Math.random() * 0.2; // Significant decrease
-          const newRev = Math.round(d.revenue * revMult);
-          const newCost = Math.round(d.cost * costMult);
-          return {
-            ...d,
-            revenue: newRev,
-            cost: newCost,
-            profit: newRev - newCost
-          };
-        });
-        
-        const newPieData = pieData.map(p => ({
-          ...p,
-          value: Math.round(p.value * (1.2 + Math.random() * 0.8))
-        }));
-
-        setFinancialData(newData);
-        setPieData(newPieData);
-        setHasManualUpload(true);
-        setIsProcessing(false);
-        alert(lang === 'en' ? 'Financial data updated from file! Revenue and Profit margins have been recalculated.' : '¡Datos financieros actualizados desde el archivo! Los márgenes de Ingresos y Utilidad han sido recalculados.');
-      }, 2000);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
+          
+          if (jsonData.length > 0) {
+            const newData = financialData.map((d, idx) => {
+              const row = jsonData[idx % jsonData.length];
+              const newRev = parseFloat(row.revenue || row.Revenue || row.Ingresos || d.revenue * 1.2);
+              const newCost = parseFloat(row.cost || row.Cost || row.Costos || d.cost * 1.1);
+              return {
+                ...d,
+                revenue: newRev,
+                cost: newCost,
+                profit: newRev - newCost
+              };
+            });
+            
+            setFinancialData(newData);
+            setHasManualUpload(true);
+            addNotification(lang === 'en' ? `Successfully processed ${file.name}. Financial data updated.` : `Procesado con éxito ${file.name}. Datos financieros actualizados.`, 'success');
+          }
+        } catch (err) {
+          console.error('Error parsing financial data:', err);
+          addNotification(lang === 'en' ? 'Error parsing file.' : 'Error al analizar el archivo.', 'alert');
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+      reader.readAsArrayBuffer(file);
     }
   };
 
@@ -142,7 +153,7 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
       document.body.removeChild(link);
       
       setIsProcessing(false);
-      alert(lang === 'en' ? 'Financial report generated and downloaded.' : 'Reporte financiero generado y descargado.');
+      addNotification(lang === 'en' ? 'Financial report generated and downloaded.' : 'Reporte financiero generado y descargado.', 'success');
     }, 1500);
   };
 
@@ -300,6 +311,7 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
               id="financial-upload" 
               className="hidden" 
               onChange={handleFileUpload}
+              accept=".xlsx,.xls,.csv"
             />
             <label 
               htmlFor="financial-upload"
@@ -663,7 +675,8 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
                   <div 
                     onClick={() => {
                       const lastVal = financialData[financialData.length-1][financialFilter];
-                      alert(lang === 'en' ? `Current Period ${financialFilter}: $${(lastVal * 10).toLocaleString()}` : `${t[financialFilter]} Periodo Actual: $${(lastVal * 10).toLocaleString()}`);
+                      const msg = lang === 'en' ? `Current Period ${financialFilter}: $${(lastVal * 10).toLocaleString()}` : `${t[financialFilter]} Periodo Actual: $${(lastVal * 10).toLocaleString()}`;
+                      addNotification(msg, 'info');
                     }}
                     className="p-6 bg-white/5 rounded-3xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
                   >
@@ -677,7 +690,8 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
                   <div 
                     onClick={() => {
                       const lastVal = financialData[financialData.length-1][financialFilter];
-                      alert(lang === 'en' ? `Projected ${financialFilter}: $${(lastVal * 11).toLocaleString()}` : `${t[financialFilter]} Proyectado: $${(lastVal * 11).toLocaleString()}`);
+                      const msg = lang === 'en' ? `Projected ${financialFilter}: $${(lastVal * 11).toLocaleString()}` : `${t[financialFilter]} Proyectado: $${(lastVal * 11).toLocaleString()}`;
+                      addNotification(msg, 'info');
                     }}
                     className="p-6 bg-white/5 rounded-3xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
                   >
@@ -686,7 +700,10 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
                     <p className="text-[10px] text-white/20 mt-2">{lang === 'en' ? 'Based on current growth' : 'Basado en crecimiento actual'}</p>
                   </div>
                   <div 
-                    onClick={() => alert(lang === 'en' ? 'Variance Analysis: -$4,200 (2.8% below target due to seasonal labor spike)' : 'Análisis de Varianza: -$4,200 (2.8% debajo del objetivo debido al pico laboral estacional)')}
+                    onClick={() => {
+                      const msg = lang === 'en' ? 'Variance Analysis: -$4,200 (2.8% below target due to seasonal labor spike)' : 'Análisis de Varianza: -$4,200 (2.8% debajo del objetivo debido al pico laboral estacional)';
+                      addNotification(msg, 'info');
+                    }}
                     className="p-6 bg-white/5 rounded-3xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
                   >
                     <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Variance' : 'Varianza'}</p>
@@ -758,7 +775,9 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
                       {aiInsights.recommendations.length > 0 ? aiInsights.recommendations.map((rec, i) => (
                         <button 
                           key={i}
-                          onClick={() => alert(`${lang === 'en' ? 'Executing' : 'Ejecutando'}: ${rec}`)}
+                          onClick={() => {
+                            addNotification(`${lang === 'en' ? 'Executing' : 'Ejecutando'}: ${rec}`, 'operational');
+                          }}
                           className="w-full p-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold text-sm hover:bg-white/10 transition-all flex justify-between items-center group"
                         >
                           <span className="text-left">{rec}</span>
@@ -980,7 +999,7 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
                     setIsProcessing(true);
                     setTimeout(() => {
                       setIsProcessing(false);
-                      alert(lang === 'en' ? 'Ledger exported to PDF successfully.' : 'Libro mayor exportado a PDF con éxito.');
+                      addNotification(lang === 'en' ? 'Ledger exported to PDF successfully.' : 'Libro mayor exportado a PDF con éxito.', 'success');
                     }, 1500);
                   }}
                   className="px-6 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all flex items-center gap-2"
@@ -993,7 +1012,7 @@ export const Financials: React.FC<FinancialsProps> = ({ lang, financialData: pro
                     setIsProcessing(true);
                     setTimeout(() => {
                       setIsProcessing(false);
-                      alert(lang === 'en' ? 'Transactions reconciled with bank records.' : 'Transacciones conciliadas con registros bancarios.');
+                      addNotification(lang === 'en' ? 'Transactions reconciled with bank records.' : 'Transacciones conciliadas con registros bancarios.', 'success');
                     }, 2000);
                   }}
                   className="px-6 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold hover:bg-porteo-orange/90 transition-all flex items-center gap-2"

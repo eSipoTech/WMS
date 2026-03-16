@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { InventoryItem } from '../types';
 import { 
   Package, 
   Truck, 
@@ -23,9 +24,10 @@ import { getAIInsight, getOperationalAdvice, getPredictiveDiscrepancy } from '..
 
 interface WarehouseOperationsProps {
   language: 'en' | 'es';
+  inventoryItems: InventoryItem[];
 }
 
-export const WarehouseOperations = ({ language }: WarehouseOperationsProps) => {
+export const WarehouseOperations = ({ language, inventoryItems }: WarehouseOperationsProps) => {
   const [activeSubTab, setActiveSubTab] = useState<'receiving' | 'picking' | 'packing' | 'counts'>('receiving');
   const [loading, setLoading] = useState<string | null>(null);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
@@ -33,28 +35,86 @@ export const WarehouseOperations = ({ language }: WarehouseOperationsProps) => {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [receivingStep, setReceivingStep] = useState(1);
   const [showLabel, setShowLabel] = useState(false);
+
+  // Derive some dynamic tasks from inventory if it exists
+  const dynamicTasks = useMemo(() => {
+    if (!inventoryItems || inventoryItems.length === 0) {
+      return {
+        receiving: [
+          { id: 'REC-001', supplier: 'GlobalParts', items: 12, status: 'in-progress', dock: 'D-01' },
+          { id: 'REC-002', supplier: 'EcoSource', items: 45, status: 'pending', dock: 'D-02' },
+          { id: 'REC-003', supplier: 'TechCorp', items: 8, status: 'completed', dock: 'D-03' },
+        ],
+        picking: [
+          { id: 'PICK-991', customer: 'Walmart', items: 24, priority: 'High', zone: 'Zone A', status: 'ready' },
+          { id: 'PICK-992', customer: 'Amazon', items: 156, priority: 'Medium', zone: 'Zone B', status: 'in-progress' },
+        ],
+        packing: [
+          { id: 'PACK-501', order: 'ORD-8821', carrier: 'FedEx', status: 'packing', items: 4 },
+        ]
+      };
+    }
+
+    // Group items by customer for picking tasks
+    const customerGroups: Record<string, InventoryItem[]> = {};
+    inventoryItems.forEach(item => {
+      if (!customerGroups[item.customer]) customerGroups[item.customer] = [];
+      customerGroups[item.customer].push(item);
+    });
+
+    const pickingTasks = Object.entries(customerGroups).slice(0, 8).map(([customer, items], i) => ({
+      id: `PICK-${1000 + i}`,
+      customer: customer,
+      items: items.reduce((acc, curr) => acc + curr.quantity, 0),
+      priority: i % 3 === 0 ? 'High' : (i % 3 === 1 ? 'Medium' : 'Low'),
+      zone: items[0].location.split('-')[0] || 'Zone A',
+      status: i % 2 === 0 ? 'ready' : 'in-progress'
+    }));
+
+    const packingTasks = Object.entries(customerGroups).slice(8, 12).map(([customer, items], i) => ({
+      id: `PACK-${2000 + i}`,
+      order: `ORD-${3000 + i}`,
+      carrier: i % 2 === 0 ? 'FedEx' : 'DHL',
+      status: i % 3 === 0 ? 'packing' : 'ready',
+      items: items.length
+    }));
+
+    return {
+      receiving: [
+        { id: 'REC-001', supplier: 'GlobalParts', items: 12, status: 'in-progress', dock: 'D-01' },
+        { id: 'REC-002', supplier: 'EcoSource', items: 45, status: 'pending', dock: 'D-02' },
+      ],
+      picking: pickingTasks,
+      packing: packingTasks
+    };
+  }, [inventoryItems]);
+
+  const [tasks, setTasks] = useState(dynamicTasks);
+
+  useEffect(() => {
+    setTasks(dynamicTasks);
+  }, [dynamicTasks]);
+
   const [discrepancies, setDiscrepancies] = useState([
     { sku: 'SKU-001', expected: 1200, actual: 1198, diff: -2, reason: 'Damaged', status: 'pending' },
     { sku: 'SKU-009', expected: 45, actual: 46, diff: +1, reason: 'Miscount', status: 'pending' },
   ]);
 
-  const [tasks, setTasks] = useState({
-    receiving: [
-      { id: 'REC-001', supplier: 'GlobalParts', items: 12, status: 'in-progress', dock: 'D-01' },
-      { id: 'REC-002', supplier: 'EcoSource', items: 45, status: 'pending', dock: 'D-02' },
-      { id: 'REC-003', supplier: 'TechCorp', items: 8, status: 'completed', dock: 'D-03' },
-    ],
-    picking: [
-      { id: 'PICK-991', customer: 'Walmart', items: 24, priority: 'High', zone: 'Zone A', status: 'ready' },
-      { id: 'PICK-992', customer: 'Amazon', items: 156, priority: 'Medium', zone: 'Zone B', status: 'in-progress' },
-      { id: 'PICK-993', customer: 'Tesla', items: 5, priority: 'Urgent', zone: 'Zone A', status: 'pending' },
-    ],
-    packing: [
-      { id: 'PACK-501', order: 'ORD-8821', carrier: 'FedEx', status: 'packing', items: 4 },
-      { id: 'PACK-502', order: 'ORD-8822', carrier: 'DHL', status: 'ready', items: 12 },
-      { id: 'PACK-503', order: 'ORD-8823', carrier: 'UPS', status: 'shipped', items: 2 },
-    ]
-  });
+  // Update discrepancies based on inventory if needed
+  useEffect(() => {
+    if (inventoryItems.length > 0) {
+      // Simulate some discrepancies for the first few items
+      const newDiscrepancies = inventoryItems.slice(0, 3).map((item, i) => ({
+        sku: item.sku,
+        expected: item.quantity,
+        actual: Math.max(0, item.quantity + (i % 2 === 0 ? -1 : 1)),
+        diff: i % 2 === 0 ? -1 : 1,
+        reason: i % 2 === 0 ? 'Damaged' : 'Miscount',
+        status: 'pending'
+      }));
+      setDiscrepancies(newDiscrepancies);
+    }
+  }, [inventoryItems]);
 
   const handleAction = async (action: string, data?: any) => {
     setLoading(action);

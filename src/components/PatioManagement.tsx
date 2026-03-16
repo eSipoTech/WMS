@@ -16,9 +16,10 @@ import { MOCK_PATIO } from '../constants';
 interface PatioManagementProps {
   lang: 'en' | 'es';
   searchQuery?: string;
+  trucks?: any[];
 }
 
-export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQuery = '' }) => {
+export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQuery = '', trucks = [] }) => {
   const t = {
     title: lang === 'en' ? 'Patio & Yard Management' : 'Gestión de Patio y Patio',
     parking: lang === 'en' ? 'Parking Slots' : 'Cajones de Estacionamiento',
@@ -36,7 +37,20 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
     }
   };
 
-  const filteredPatio = MOCK_PATIO.filter(slot => 
+  // Merge mock patio with real trucks if they have dock assignments
+  const patioWithTrucks = MOCK_PATIO.map(slot => {
+    const truckAtSlot = trucks.find(t => t.dock === slot.label || t.id === slot.truckId);
+    if (truckAtSlot) {
+      return {
+        ...slot,
+        status: 'occupied' as const,
+        truckId: truckAtSlot.id
+      };
+    }
+    return slot;
+  });
+
+  const filteredPatio = patioWithTrucks.filter(slot => 
     slot.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (slot.truckId && slot.truckId.toLowerCase().includes(searchQuery.toLowerCase()))
   );

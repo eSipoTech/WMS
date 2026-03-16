@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 import { 
   Cpu, 
   Settings, 
@@ -191,15 +192,35 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
-      addNotification(lang === 'en' ? `Uploading ${file.name}...` : `Subiendo ${file.name}...`, 'info');
-      setTimeout(() => {
-        setUploadedData([
-          { id: 1, date: '2026-03-09', line: 'L-01', output: 450, defects: 2 },
-          { id: 2, date: '2026-03-09', line: 'L-02', output: 320, defects: 0 },
-          { id: 3, date: '2026-03-09', line: 'L-03', output: 150, defects: 5 }
-        ]);
-        addNotification(lang === 'en' ? 'Production data synchronized successfully.' : 'Datos de producción sincronizados correctamente.', 'success');
-      }, 2000);
+      addNotification(lang === 'en' ? `Processing ${file.name}...` : `Procesando ${file.name}...`, 'info');
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
+          
+          if (jsonData.length > 0) {
+            const newProductionData = jsonData.map((row, idx) => ({
+              id: row.id || row.ID || idx + 1,
+              date: row.date || row.Date || row.Fecha || new Date().toISOString().split('T')[0],
+              line: row.line || row.Line || row.Linea || `L-0${(idx % 3) + 1}`,
+              output: parseInt(row.output || row.Output || row.Produccion || 0),
+              defects: parseInt(row.defects || row.Defects || row.Defectos || 0)
+            }));
+            
+            setUploadedData(newProductionData);
+            addNotification(lang === 'en' ? 'Production data synchronized successfully.' : 'Datos de producción sincronizados correctamente.', 'success');
+          }
+        } catch (err) {
+          console.error('Error parsing production data:', err);
+          addNotification(lang === 'en' ? 'Error parsing file.' : 'Error al analizar el archivo.', 'info');
+        }
+      };
+      reader.readAsArrayBuffer(file);
     }
   };
 
@@ -246,7 +267,7 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
           <label className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all cursor-pointer">
             <Plus className="w-5 h-5 text-porteo-orange" />
             {t.uploadData}
-            <input type="file" className="hidden" onChange={handleFileUpload} accept=".xls,.xlsx,.pdf" />
+            <input type="file" className="hidden" onChange={handleFileUpload} accept=".xls,.xlsx,.csv,.pdf" />
           </label>
           <button 
             onClick={() => setShowBotModal(true)}
