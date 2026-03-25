@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Send, Terminal, Cpu, TrendingUp, ShieldAlert, Warehouse, DollarSign, Search, MessageSquare } from 'lucide-react';
+import { Bot, Send, Terminal, Cpu, TrendingUp, ShieldAlert, Warehouse, DollarSign, Search, MessageSquare, Briefcase, Scale, Leaf } from 'lucide-react';
 import { getAIAssistance } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import { AI_AGENTS } from '../constants';
 
 interface IntelligenceAgentsProps {
-  language: 'en' | 'es';
+  lang: 'en' | 'es';
 }
 
-export const IntelligenceAgents = ({ language }: IntelligenceAgentsProps) => {
+export const IntelligenceAgents = ({ lang }: IntelligenceAgentsProps) => {
+  const language = lang; // Alias for backward compatibility
   const [selectedAgent, setSelectedAgent] = useState<typeof AI_AGENTS[number]>(AI_AGENTS[0]);
   const [messages, setMessages] = useState<Record<string, { role: 'user' | 'ai', text: string }[]>>({});
   const [input, setInput] = useState('');
@@ -56,6 +57,9 @@ export const IntelligenceAgents = ({ language }: IntelligenceAgentsProps) => {
       case 'Cpu': return <Cpu className={className} />;
       case 'Warehouse': return <Warehouse className={className} />;
       case 'DollarSign': return <DollarSign className={className} />;
+      case 'Briefcase': return <Briefcase className={className} />;
+      case 'Scale': return <Scale className={className} />;
+      case 'Leaf': return <Leaf className={className} />;
       default: return <Bot className={className} />;
     }
   };

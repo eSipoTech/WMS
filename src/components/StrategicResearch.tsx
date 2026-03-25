@@ -20,17 +20,17 @@ import {
   X,
   Download
 } from 'lucide-react';
-import { getStrategicInsight } from '../services/geminiService';
+import { getStrategicInsight, getStrategicSimulation, getComplianceAuditReport } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
-import { Type } from '@google/genai';
 
 interface StrategicResearchProps {
   lang: 'en' | 'es';
+  market: 'USA' | 'MEXICO';
   setActiveTab: (tab: string) => void;
   addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setActiveTab, addNotification }) => {
+export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, market, setActiveTab, addNotification }) => {
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [complianceStatus, setComplianceStatus] = useState<'validating' | 'ready' | 'idle'>('idle');
@@ -39,46 +39,60 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
   const [showAuditResult, setShowAuditResult] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [simCounter, setSimCounter] = useState(0);
+  const [simulationData, setSimulationData] = useState<{
+    throughput: number;
+    leadTime: number;
+    accuracy: number;
+    advice: string;
+  } | null>(null);
+
+  const [auditData, setAuditData] = useState<{
+    auditId: string;
+    items: { label: string; status: 'Passed' | 'Warning' | 'Failed'; score: string; required: boolean }[];
+    alert: { title: string; details: string };
+  } | null>(null);
+
   const [activeTool, setActiveTool] = useState<'compliance' | 'simulator' | 'audit'>('compliance');
   const [marketPulse, setMarketPulse] = useState({
     nearshoring: { 
       level: 'High', 
-      advice: lang === 'en' ? 'Focus on Onshoring/Reshoring strategy.' : 'Focus on Monterrey/Bajio expansion.' 
+      advice: market === 'USA' ? 'Focus on Onshoring/Reshoring strategy.' : 'Focus on Monterrey/Bajio expansion.' 
     },
     regulatory: { 
       level: 'Moderate', 
-      advice: lang === 'en' ? 'Monitor FMCSA updates for ELD compliance.' : 'Monitor SAT updates for Carta Porte v3.1.' 
+      advice: market === 'USA' ? 'Monitor FMCSA updates for ELD compliance.' : 'Monitor SAT updates for Carta Porte v3.1.' 
     },
     tech: { 
       level: 'Accelerating', 
-      advice: lang === 'en' ? 'Invest in automated sorting systems.' : 'Invest in AI-driven slotting tools.' 
+      advice: market === 'USA' ? 'Invest in automated sorting systems.' : 'Invest in AI-driven slotting tools.' 
     }
   });
 
-  // Update market pulse when language changes to ensure correct default advice
+  // Update market pulse when language or market changes to ensure correct default advice
   useEffect(() => {
     setMarketPulse({
       nearshoring: { 
         level: 'High', 
-        advice: lang === 'en' ? 'Focus on Onshoring/Reshoring strategy.' : 'Focus on Monterrey/Bajio expansion.' 
+        advice: market === 'USA' ? (lang === 'en' ? 'Focus on Onshoring/Reshoring strategy.' : 'Enfoque en estrategia de Onshoring/Reshoring.') : (lang === 'en' ? 'Focus on Monterrey/Bajio expansion.' : 'Enfoque en expansión en Monterrey/Bajío.')
       },
       regulatory: { 
         level: 'Moderate', 
-        advice: lang === 'en' ? 'Monitor FMCSA updates for ELD compliance.' : 'Monitor SAT updates for Carta Porte v3.1.' 
+        advice: market === 'USA' ? (lang === 'en' ? 'Monitor FMCSA updates for ELD compliance.' : 'Monitorear actualizaciones de FMCSA para cumplimiento de ELD.') : (lang === 'en' ? 'Monitor SAT updates for Carta Porte v3.1.' : 'Monitorear actualizaciones del SAT para Carta Porte v3.1.')
       },
       tech: { 
         level: 'Accelerating', 
-        advice: lang === 'en' ? 'Invest in automated sorting systems.' : 'Invest in AI-driven slotting tools.' 
+        advice: market === 'USA' ? (lang === 'en' ? 'Invest in automated sorting systems.' : 'Invertir en sistemas de clasificación automatizados.') : (lang === 'en' ? 'Invest in AI-driven slotting tools.' : 'Invertir en herramientas de slotting impulsadas por IA.')
       }
     });
-  }, [lang]);
+  }, [lang, market]);
 
   const t = {
     title: lang === 'en' ? 'Strategic Logistics Hub' : 'Hub de Logística Estratégica',
     subtitle: lang === 'en' ? 'Advanced tools for compliance, simulation, and operational growth' : 'Herramientas avanzadas para cumplimiento, simulación y crecimiento operativo',
-    compliance: lang === 'en' ? 'US Compliance' : 'Cumplimiento Mexicano',
-    complianceButton: lang === 'en' ? 'DOT/FMCSA Ready' : 'CFDI 4.0 Ready',
-    cartaPorteButton: lang === 'en' ? 'Bill of Lading v3.0' : 'Carta Porte v3.0',
+    compliance: market === 'USA' ? (lang === 'en' ? 'US Compliance' : 'Cumplimiento EUA') : (lang === 'en' ? 'Mexico Compliance' : 'Cumplimiento Mexicano'),
+    complianceButton: market === 'USA' ? (lang === 'en' ? 'DOT/FMCSA Ready' : 'DOT/FMCSA Listo') : (lang === 'en' ? 'CFDI 4.0 Ready' : 'CFDI 4.0 Listo'),
+    cartaPorteButton: market === 'USA' ? (lang === 'en' ? 'Bill of Lading v3.0' : 'Conocimiento de Embarque v3.0') : (lang === 'en' ? 'Carta Porte v3.0' : 'Carta Porte v3.0'),
     automotive: lang === 'en' ? 'Automotive Tools' : 'Herramientas Automotrices',
     aiAdvisor: lang === 'en' ? 'AI Strategic Advisor' : 'Asesor Estratégico IA',
     generateInsight: lang === 'en' ? 'Generate Strategic Insight' : 'Generar Perspectiva Estratégica',
@@ -86,9 +100,9 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
     auditButton: lang === 'en' ? 'Run Full Audit' : 'Ejecutar Auditoría Completa',
     simulationButton: lang === 'en' ? 'Start Simulation' : 'Iniciar Simulación',
     auditTitle: lang === 'en' ? 'Compliance Auditor' : 'Auditor de Cumplimiento',
-    auditDesc: lang === 'en' 
-      ? 'Automated audit of all DOT/FMCSA and Bill of Lading documents against US regulations.' 
-      : 'Auditoría automatizada de todos los documentos CFDI 4.0 y Carta Porte contra las regulaciones del SAT.',
+    auditDesc: market === 'USA' 
+      ? (lang === 'en' ? 'Automated audit of all DOT/FMCSA and Bill of Lading documents against US regulations.' : 'Auditoría automatizada de todos los documentos DOT/FMCSA y Bill of Lading contra las regulaciones de EUA.')
+      : (lang === 'en' ? 'Automated audit of all CFDI 4.0 and Carta Porte documents against SAT regulations.' : 'Auditoría automatizada de todos los documentos CFDI 4.0 y Carta Porte contra las regulaciones del SAT.'),
     simTitle: lang === 'en' ? 'Operational Simulator' : 'Simulador Operativo',
     simDesc: lang === 'en' 
       ? 'Run "What-If" scenarios for your assembly lines and warehouse layout using ML to predict bottlenecks.' 
@@ -98,19 +112,19 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
   const generateStrategicInsight = async () => {
     setIsLoadingInsight(true);
     try {
-      const region = lang === 'en' ? 'USA' : 'Mexico';
-      const complianceTerm = lang === 'en' ? 'DOT/FMCSA' : 'CFDI 4.0';
+      const region = market === 'USA' ? 'USA' : 'Mexico';
+      const complianceTerm = market === 'USA' ? 'DOT/FMCSA' : 'CFDI 4.0';
       const query = lang === 'en' 
         ? `Analyze current automotive logistics in ${region}. 
            Provide a strategic growth projection for a warehouse in ${region}.
            Focus on assembly lines and ${complianceTerm} compliance benefits.
-           Also, provide 3 market pulse metrics: Nearshoring Demand (or Onshoring for US), Regulatory Pressure, and Tech Adoption.
+           Also, provide 3 market pulse metrics: ${market === 'USA' ? 'Onshoring' : 'Nearshoring'} Demand, Regulatory Pressure, and Tech Adoption.
            Format the pulse metrics at the end of your response as a JSON block: 
            {"nearshoring": {"level": "...", "advice": "..."}, "regulatory": {"level": "...", "advice": "..."}, "tech": {"level": "...", "advice": "..."}}`
-        : `Analiza la logística automotriz actual en México.
-           Proporciona una proyección de crecimiento estratégico para un almacén en México.
-           Enfócate en las líneas de ensamble y los beneficios del cumplimiento de CFDI 4.0.
-           Además, proporciona 3 métricas de pulso de mercado: Demanda de Nearshoring, Presión Regulatoria y Adopción Tecnológica.
+        : `Analiza la logística automotriz actual en ${region}.
+           Proporciona una proyección de crecimiento estratégico para un almacén en ${region}.
+           Enfócate en las líneas de ensamble y los beneficios del cumplimiento de ${complianceTerm}.
+           Además, proporciona 3 métricas de pulso de mercado: Demanda de ${market === 'USA' ? 'Onshoring' : 'Nearshoring'}, Presión Regulatoria y Adopción Tecnológica.
            Formatea las métricas de pulso al final de tu respuesta como un bloque JSON:
            {"nearshoring": {"level": "...", "advice": "..."}, "regulatory": {"level": "...", "advice": "..."}, "tech": {"level": "...", "advice": "..."}}`;
       
@@ -136,31 +150,46 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
     }
   };
 
-  const validateCompliance = () => {
+  const validateCompliance = async () => {
     setComplianceStatus('validating');
-    setTimeout(() => {
+    try {
+      // Simulate a deep check
+      await new Promise(resolve => setTimeout(resolve, 2000));
       setComplianceStatus('ready');
       setShowComplianceCert(true);
-    }, 2000);
+    } catch (error) {
+      console.error(error);
+      setComplianceStatus('idle');
+    }
   };
 
-  const [simCounter, setSimCounter] = useState(0);
-
-  const startSimulation = () => {
+  const startSimulation = async () => {
     setIsSimulating(true);
-    setTimeout(() => {
-      setIsSimulating(false);
+    try {
+      const data = await getStrategicSimulation(market, lang);
+      setSimulationData(data);
       setSimCounter(prev => prev + 1);
       setShowSimResult(true);
-    }, 3000);
+    } catch (error) {
+      console.error(error);
+      addNotification(lang === 'en' ? 'Error running simulation.' : 'Error al ejecutar la simulación.', 'alert');
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
-  const runAudit = () => {
+  const runAudit = async () => {
     setIsAuditing(true);
-    setTimeout(() => {
-      setIsAuditing(false);
+    try {
+      const data = await getComplianceAuditReport(market, lang);
+      setAuditData(data);
       setShowAuditResult(true);
-    }, 2500);
+    } catch (error) {
+      console.error(error);
+      addNotification(lang === 'en' ? 'Error running audit.' : 'Error al ejecutar la auditoría.', 'alert');
+    } finally {
+      setIsAuditing(false);
+    }
   };
 
   const handleApplyOptimization = () => {
@@ -521,15 +550,15 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
               <div className="grid grid-cols-3 gap-4 mb-8">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
                   <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Throughput</p>
-                  <p className="text-lg font-bold text-emerald-500">+{15 + (simCounter % 5)}%</p>
+                  <p className="text-lg font-bold text-emerald-500">+{simulationData?.throughput || (15 + (simCounter % 5))}%</p>
                 </div>
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
                   <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Lead Time</p>
-                  <p className="text-lg font-bold text-emerald-500">-{10 + (simCounter % 3)}m</p>
+                  <p className="text-lg font-bold text-emerald-500">-{simulationData?.leadTime || (10 + (simCounter % 3))}m</p>
                 </div>
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
                   <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Accuracy</p>
-                  <p className="text-lg font-bold text-porteo-blue">99.{7 + (simCounter % 3)}%</p>
+                  <p className="text-lg font-bold text-porteo-blue">{simulationData?.accuracy || (99.7 + (simCounter % 3) / 10)}%</p>
                 </div>
               </div>
 
@@ -540,9 +569,9 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
                     AI Optimization Advice
                   </h4>
                   <p className="text-xs text-white/60 leading-relaxed">
-                    {lang === 'en' 
+                    {simulationData?.advice || (lang === 'en' 
                       ? 'Machine Learning models suggest reconfiguring Assembly Line 4 to handle increased kitting volume. Predicted bottleneck at Dock 7 can be mitigated by shifting 15% of inbound traffic to Dock 12.' 
-                      : 'Los modelos de Machine Learning sugieren reconfigurar la Línea de Ensamble 4 para manejar el aumento del volumen de kitting. El cuello de botella predicho en el Muelle 7 puede mitigarse desplazando el 15% del tráfico entrante al Muelle 12.'}
+                      : 'Los modelos de Machine Learning sugieren reconfigurar la Línea de Ensamble 4 para manejar el aumento del volumen de kitting. El cuello de botella predicho en el Muelle 7 puede mitigarse desplazando el 15% del tráfico entrante al Muelle 12.')}
                   </p>
                 </div>
               </div>
@@ -582,7 +611,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-white">{lang === 'en' ? 'Compliance Audit Report' : 'Informe de Auditoría de Cumplimiento'}</h3>
-                    <p className="text-xs text-white/40 uppercase tracking-widest font-bold">Audit ID: AUD-2026-0042</p>
+                    <p className="text-xs text-white/40 uppercase tracking-widest font-bold">Audit ID: {auditData?.auditId || 'AUD-2026-0042'}</p>
                   </div>
                 </div>
                 <button onClick={() => setShowAuditResult(false)} className="text-white/40 hover:text-white">
@@ -591,16 +620,16 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
               </div>
 
               <div className="space-y-4 mb-8">
-                {[
+                {(auditData?.items || [
                   { label: lang === 'en' ? 'DOT Documentation' : 'Documentación SAT', status: 'Passed', score: '100%', required: true },
                   { label: lang === 'en' ? 'Bill of Lading Integrity' : 'Integridad de Carta Porte', status: 'Passed', score: '100%', required: true },
                   { label: lang === 'en' ? 'FMCSA Safety Sync' : 'Sincronización de Seguridad', status: 'Warning', score: '85%', required: false },
                   { label: lang === 'en' ? 'Tax Compliance' : 'Cumplimiento Fiscal', status: 'Passed', score: '100%', required: true }
-                ].map((item, idx) => (
+                ]).map((item: any, idx: number) => (
                   <div key={idx} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
                     <span className="text-sm text-white/80">{item.label}</span>
                     <div className="flex items-center gap-4">
-                      <span className={`text-[10px] font-bold ${item.status === 'Passed' ? 'text-emerald-500 bg-emerald-500/10' : 'text-porteo-orange bg-porteo-orange/10'} px-2 py-1 rounded uppercase`}>
+                      <span className={`text-[10px] font-bold ${item.status === 'Passed' ? 'text-emerald-500 bg-emerald-500/10' : item.status === 'Warning' ? 'text-porteo-orange bg-porteo-orange/10' : 'text-red-500 bg-red-500/10'} px-2 py-1 rounded uppercase`}>
                         {item.status}
                       </span>
                       <span className="text-sm font-bold text-white">{item.score}</span>
@@ -612,12 +641,12 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, setA
               <div className="p-4 bg-porteo-orange/10 border border-porteo-orange/20 rounded-2xl mb-8">
                 <p className="text-xs text-porteo-orange font-bold flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
-                  {lang === 'en' ? 'Incomplete Platform Data' : 'Datos de Plataforma Incompletos'}
+                  {auditData?.alert?.title || (lang === 'en' ? 'Incomplete Platform Data' : 'Datos de Plataforma Incompletos')}
                 </p>
                 <p className="text-[10px] text-porteo-orange/60 mt-1">
-                  {lang === 'en' 
+                  {auditData?.alert?.details || (lang === 'en' 
                     ? 'Audit detected missing ELD logs for 3 shipments. Please upload required documents to achieve 100% compliance.' 
-                    : 'La auditoría detectó registros ELD faltantes para 3 envíos. Por favor, cargue los documentos requeridos para lograr el 100% de cumplimiento.'}
+                    : 'La auditoría detectó registros ELD faltantes para 3 envíos. Por favor, cargue los documentos requeridos para lograr el 100% de cumplimiento.')}
                 </p>
               </div>
 

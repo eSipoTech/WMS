@@ -1,18 +1,37 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { DollarSign, FileText, TrendingUp, Users, Search, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck, Calendar, AlertCircle, ExternalLink, Plus } from 'lucide-react';
+import { DollarSign, FileText, TrendingUp, Users, Search, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck, Calendar, AlertCircle, ExternalLink, Plus, Upload } from 'lucide-react';
 import { MOCK_PRICING, MOCK_REBATES, MOCK_CONTRACTS } from '../constants';
 import { Contract } from '../types';
 
 interface CommercialManagementProps {
-  language: 'en' | 'es';
+  lang: 'en' | 'es';
+  market: 'USA' | 'MEXICO';
   onViewContract?: (contract: Contract) => void;
   onNewContract?: () => void;
+  onViewPricing?: (pricing: any) => void;
+  onViewRebate?: (rebate: any) => void;
+  defaultSubTab?: 'pricing' | 'rebates' | 'contracts';
 }
 
-export const CommercialManagement = ({ language, onViewContract, onNewContract }: CommercialManagementProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'pricing' | 'rebates' | 'contracts'>('pricing');
+export const CommercialManagement = ({ 
+  lang, 
+  market,
+  onViewContract, 
+  onNewContract, 
+  onViewPricing, 
+  onViewRebate,
+  defaultSubTab = 'pricing'
+}: CommercialManagementProps) => {
+  const language = lang; // Alias for backward compatibility
+  const currency = market === 'USA' ? 'USD' : 'MXN';
+  const [activeSubTab, setActiveSubTab] = useState<'pricing' | 'rebates' | 'contracts'>(defaultSubTab);
   const [contractSearch, setContractSearch] = useState('');
+
+  // Update activeSubTab if defaultSubTab changes (e.g. from sidebar navigation)
+  React.useEffect(() => {
+    setActiveSubTab(defaultSubTab);
+  }, [defaultSubTab]);
 
   const filteredContracts = MOCK_CONTRACTS.filter(c => 
     c.partyName.toLowerCase().includes(contractSearch.toLowerCase()) ||
@@ -44,7 +63,7 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
 
       <div className="flex-1 glass rounded-[32px] overflow-hidden flex flex-col">
         {activeSubTab === 'pricing' && (
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Customer Specific Pricing' : 'Precios Específicos por Cliente'}</h3>
               <div className="flex gap-4">
@@ -56,7 +75,10 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
                     className="bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-xs text-white outline-none focus:border-porteo-orange/50"
                   />
                 </div>
-                <button className="p-2 bg-white/5 border border-white/10 rounded-xl text-white/60 hover:text-white">
+                <button 
+                  onClick={() => alert(language === 'en' ? 'Filter options coming soon' : 'Opciones de filtro próximamente')}
+                  className="p-2 bg-white/5 border border-white/10 rounded-xl text-white/60 hover:text-white transition-colors"
+                >
                   <Filter className="w-4 h-4" />
                 </button>
               </div>
@@ -76,11 +98,15 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
                 </thead>
                 <tbody>
                   {MOCK_PRICING.map((p, i) => (
-                    <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                      <td className="py-4 px-4 text-sm font-bold text-white">{p.customerId}</td>
+                    <tr 
+                      key={i} 
+                      onClick={() => onViewPricing?.(p)}
+                      className="border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-4 px-4 text-sm font-bold text-white group-hover:text-porteo-orange transition-colors">{p.customerId}</td>
                       <td className="py-4 px-4 text-sm text-white/60">{p.sku}</td>
-                      <td className="py-4 px-4 text-sm text-white/60">${p.basePrice.toFixed(2)}</td>
-                      <td className="py-4 px-4 text-sm font-bold text-porteo-orange">${p.discountedPrice.toFixed(2)}</td>
+                      <td className="py-4 px-4 text-sm text-white/60">{currency} ${p.basePrice.toFixed(2)}</td>
+                      <td className="py-4 px-4 text-sm font-bold text-porteo-orange">{currency} ${p.discountedPrice.toFixed(2)}</td>
                       <td className="py-4 px-4 text-sm text-emerald-500">-{((1 - p.discountedPrice/p.basePrice) * 100).toFixed(0)}%</td>
                       <td className="py-4 px-4 text-xs font-mono text-white/40">{p.contractId}</td>
                     </tr>
@@ -92,7 +118,7 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
         )}
 
         {activeSubTab === 'rebates' && (
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
             <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Supplier Rebate Tracking' : 'Seguimiento de Rebates de Proveedores'}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {MOCK_REBATES.map((r, i) => (
@@ -111,13 +137,13 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
                   
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-white/40">{language === 'en' ? 'Progress to Threshold' : 'Progreso hacia el Límite'}</span>
-                      <span className="text-white font-bold">${r.currentVolume.toLocaleString()} / ${r.threshold.toLocaleString()}</span>
+                      <span className="text-white/40">{language === 'en' ? 'Progress to Target' : 'Progreso hacia la Meta'}</span>
+                      <span className="text-white font-bold">{currency} ${r.currentVolume.toLocaleString()} / {currency} ${r.targetVolume.toLocaleString()}</span>
                     </div>
                     <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                       <motion.div 
                         initial={{ width: 0 }}
-                        animate={{ width: `${Math.min((r.currentVolume / r.threshold) * 100, 100)}%` }}
+                        animate={{ width: `${Math.min((r.currentVolume / r.targetVolume) * 100, 100)}%` }}
                         className={`h-full ${r.status === 'achieved' ? 'bg-emerald-500' : 'bg-porteo-orange'}`}
                       />
                     </div>
@@ -125,14 +151,18 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
 
                   <div className="flex justify-between items-center pt-4 border-t border-white/5">
                     <div className="text-center">
+                      <h4 className="text-lg font-bold text-white">{r.supplierName}</h4>
                       <p className="text-[10px] text-white/40 uppercase">{language === 'en' ? 'Rebate' : 'Rebate'}</p>
                       <p className="text-xl font-bold text-white">{r.rebatePercentage}%</p>
                     </div>
                     <div className="text-center">
                       <p className="text-[10px] text-white/40 uppercase">{language === 'en' ? 'Est. Credit' : 'Crédito Est.'}</p>
-                      <p className="text-xl font-bold text-emerald-500">${(r.currentVolume * (r.rebatePercentage / 100)).toLocaleString()}</p>
+                      <p className="text-xl font-bold text-emerald-500">{currency} ${(r.currentVolume * (r.rebatePercentage / 100)).toLocaleString()}</p>
                     </div>
-                    <button className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-colors">
+                    <button 
+                      onClick={() => onViewRebate?.(r)}
+                      className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-colors"
+                    >
                       {language === 'en' ? 'View Details' : 'Ver Detalles'}
                     </button>
                   </div>
@@ -143,8 +173,8 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
         )}
 
         {activeSubTab === 'contracts' && (
-          <div className="p-8 space-y-6 flex flex-col h-full">
-            <div className="flex justify-between items-center">
+          <div className="p-8 space-y-6 flex flex-col h-full overflow-hidden">
+            <div className="flex justify-between items-center shrink-0">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Contract Lifecycle Management' : 'Gestión del Ciclo de Vida de Contratos'}</h3>
                 <p className="text-sm text-white/40 mt-1">{language === 'en' ? 'Monitor and manage active agreements' : 'Monitorear y gestionar acuerdos activos'}</p>
@@ -160,6 +190,26 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
                     className="bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-xs text-white outline-none focus:border-porteo-orange/50"
                   />
                 </div>
+                <div className="relative">
+                  <input
+                    type="file"
+                    id="contract-upload-main"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        alert(`Uploading ${file.name}...`);
+                      }
+                    }}
+                  />
+                  <button 
+                    onClick={() => document.getElementById('contract-upload-main')?.click()} 
+                    className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-white/10 transition-all"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {language === 'en' ? 'Upload' : 'Subir'}
+                  </button>
+                </div>
                 <button 
                   onClick={onNewContract}
                   className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all"
@@ -170,13 +220,15 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 overflow-y-auto pr-2">
-              {filteredContracts.map((contract) => (
-                <motion.div 
-                  layout
-                  key={contract.id}
-                  className="p-6 bg-white/5 border border-white/10 rounded-3xl space-y-4 hover:border-porteo-orange/30 transition-all group"
-                >
+            <div className="flex-1 overflow-y-auto pr-2 min-h-0 custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-8">
+                {filteredContracts.map((contract) => (
+                  <motion.div 
+                    layout
+                    key={contract.id}
+                    onClick={() => onViewContract?.(contract)}
+                    className="p-6 bg-white/5 border border-white/10 rounded-3xl space-y-4 hover:border-porteo-orange/30 transition-all group cursor-pointer"
+                  >
                   <div className="flex justify-between items-start">
                     <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-white/40 group-hover:text-porteo-orange transition-colors">
                       <FileText className="w-5 h-5" />
@@ -222,7 +274,10 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
                         <ExternalLink className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => onViewContract?.(contract)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onViewContract?.(contract);
+                        }}
                         className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white hover:bg-white/10 transition-colors"
                       >
                         {language === 'en' ? 'Manage' : 'Gestionar'}
@@ -242,8 +297,9 @@ export const CommercialManagement = ({ language, onViewContract, onNewContract }
               ))}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 };

@@ -154,44 +154,51 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
     if (id === 'space' || id === 'occupancy') return { data: pieData, keys: ['value'], colors: ['#F27D26'] };
     
     // Generate more granular data for drill down (daily for the last 30 days)
-    const generateDailyData = (baseValue: number, variance: number) => {
-      const days = lang === 'en' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-      return Array.from({ length: 30 }).map((_, i) => ({
-        name: `Day ${i + 1}`,
-        value: baseValue + (Math.random() - 0.5) * variance,
-        average: baseValue,
-        peak: baseValue + variance * 0.8
-      }));
+    const generateDailyData = (baseValue: number, variance: number, unit: string = '') => {
+      return Array.from({ length: 30 }).map((_, i) => {
+        const val = baseValue + (Math.random() - 0.5) * variance;
+        return {
+          name: `Day ${i + 1}`,
+          value: parseFloat(val.toFixed(2)),
+          average: parseFloat(baseValue.toFixed(2)),
+          peak: parseFloat((baseValue + variance * 0.4).toFixed(2)),
+          unit
+        };
+      });
     };
 
     if (id === 'pallets') {
       const base = parseInt(statsOverride?.pallets?.replace(/,/g, '') || '12450');
-      const dailyData = generateDailyData(base, 2000);
+      const dailyData = generateDailyData(base, base * 0.15);
       
       if (drillDownView === 'average') return { data: dailyData, keys: ['average'], colors: ['#00AEEF'] };
       if (drillDownView === 'peak') return { data: dailyData, keys: ['peak'], colors: ['#F27D26'] };
-      if (drillDownView === 'current') return { data: dailyData, keys: ['value'], colors: ['#10b981'] };
-      
-      return { data: filteredFinancialData.map(d => ({ name: d.name, value: d.pallets })), keys: ['value'], colors: ['#F27D26'] };
+      return { data: dailyData, keys: ['value'], colors: ['#10b981'] };
+    }
+
+    if (id === 'occupancy') {
+      const base = parseFloat(statsOverride?.occupancy?.replace('%', '') || '83');
+      const dailyData = generateDailyData(base, 10, '%');
+      if (drillDownView === 'average') return { data: dailyData, keys: ['average'], colors: ['#00AEEF'] };
+      if (drillDownView === 'peak') return { data: dailyData, keys: ['peak'], colors: ['#F27D26'] };
+      return { data: dailyData, keys: ['value'], colors: ['#10b981'] };
+    }
+
+    if (id === 'trucks') {
+      const base = parseInt(statsOverride?.trucks || '12');
+      const dailyData = generateDailyData(base, 8);
+      return { data: dailyData, keys: ['value'], colors: ['#00AEEF'] };
     }
     
-    if (id === 'fulfillment') return { data: [
-      { name: 'Mon', accuracy: 98.2 },
-      { name: 'Tue', accuracy: 97.8 },
-      { name: 'Wed', accuracy: 99.1 },
-      { name: 'Thu', accuracy: 98.5 },
-      { name: 'Fri', accuracy: 96.4 },
-      { name: 'Sat', accuracy: 99.5 },
-      { name: 'Sun', accuracy: 98.9 },
-    ], keys: ['accuracy'], colors: ['#00AEEF'] };
-    if (id === 'productivity') return { data: [
-      { name: '08:00', lines: 120 },
-      { name: '10:00', lines: 240 },
-      { name: '12:00', lines: 180 },
-      { name: '14:00', lines: 310 },
-      { name: '16:00', lines: 290 },
-      { name: '18:00', lines: 150 },
-    ], keys: ['lines'], colors: ['#10b981'] };
+    if (id === 'fulfillment') {
+      const dailyData = generateDailyData(98.5, 3, '%');
+      return { data: dailyData, keys: ['value'], colors: ['#F27D26'] };
+    }
+
+    if (id === 'productivity') {
+      const dailyData = generateDailyData(240, 60, 'L/h');
+      return { data: dailyData, keys: ['value'], colors: ['#10b981'] };
+    }
     
     // Default for KPI stats
     return { data: filteredFinancialData.map(d => ({ ...d, value: Math.random() * 1000 })), keys: ['value'], colors: ['#F27D26'] };
@@ -235,16 +242,19 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
         const chart: CustomChart = {
           id: `ai-custom-${Date.now()}`,
           title: config.title,
-          type: config.type || 'bar',
+          type: (config.type?.toLowerCase() as any) || 'bar',
           dataKey: config.dataKey,
           color: config.color || '#F27D26'
         };
         setCustomCharts([chart, ...customCharts]);
         setAiPrompt('');
         addNotification(lang === 'en' ? `AI Expert created: ${config.title}` : `El experto de IA creó: ${config.title}`, 'success');
+      } else {
+        throw new Error("Invalid AI response");
       }
     } catch (error) {
       console.error("AI Graph Creation failed:", error);
+      addNotification(lang === 'en' ? "AI was unable to create the graph. Try a different prompt." : "La IA no pudo crear la gráfica. Intenta con otro prompt.", "alert");
     } finally {
       setIsAICreating(false);
     }
@@ -323,7 +333,10 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
             <Plus className="w-4 h-4" />
             {lang === 'en' ? 'Add Custom Graph' : 'Agregar Gráfica'}
           </button>
-          <button className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2">
+          <button 
+            onClick={() => exportReport(lang === 'en' ? 'Full Analytics Report' : 'Reporte Analítico Completo', { financial: financialData, custom: customCharts })}
+            className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+          >
             <Download className="w-4 h-4" />
             {lang === 'en' ? 'Export Report' : 'Exportar Reporte'}
           </button>

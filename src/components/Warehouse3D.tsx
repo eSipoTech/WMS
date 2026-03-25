@@ -51,6 +51,7 @@ const Rack = ({ position, color = "#444", onSelect, isSelected, zone }: { positi
 };
 
 interface Warehouse3DProps {
+  lang: 'en' | 'es';
   warehouse?: any;
   onViewDetails?: (details: any) => void;
   onAuditRack?: (rackId: string) => void;
@@ -59,7 +60,7 @@ interface Warehouse3DProps {
   addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const Warehouse3D = ({ warehouse, onViewDetails, onAuditRack, onRelocateItems, externalAction, addNotification }: Warehouse3DProps) => {
+export const Warehouse3D = ({ lang, warehouse, onViewDetails, onAuditRack, onRelocateItems, externalAction, addNotification }: Warehouse3DProps) => {
   const [selectedRack, setSelectedRack] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'normal' | 'heatmap' | 'status'>('normal');
   const [isScanning, setIsScanning] = useState(false);

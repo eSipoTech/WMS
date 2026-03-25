@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -17,11 +17,14 @@ import {
   Plus,
   ArrowUpRight,
   ArrowDownLeft,
+  ClipboardList,
+  Calendar,
   Layers,
   Map as MapIcon,
   MapPin,
   Warehouse as WarehouseIcon,
   DollarSign,
+  TrendingUp,
   Cpu,
   Zap,
   Info,
@@ -45,8 +48,12 @@ import {
   Bot,
   Database,
   BrainCircuit,
-  AlertTriangle
+  AlertTriangle,
+  Wrench,
+  ParkingCircle,
+  AlertCircle
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { 
   AreaChart, 
   Area, 
@@ -74,11 +81,12 @@ import { PatioManagement } from './components/PatioManagement';
 import { AssemblyLine } from './components/AssemblyLine';
 import { Analytics } from './components/Analytics';
 import { Financials } from './components/Financials';
-import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification, Contract } from './types';
-import { MOCK_WAREHOUSES, MOCK_INVENTORY, MOCK_TPL_PROCESSES, PORTEO_COLORS, MOCK_NOTIFICATIONS } from './constants';
+import { AdvancedLogistics } from './components/AdvancedLogistics';
+import { TPLBilling } from './components/TPLBilling';
+import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification, Contract, PatioSlot } from './types';
+import { MOCK_WAREHOUSES, MOCK_INVENTORY, MOCK_TPL_PROCESSES, PORTEO_COLORS, MOCK_NOTIFICATIONS, MOCK_INVENTORY_USA, MOCK_TRUCKS_USA, MOCK_TPL_PROCESSES_USA, MOCK_INVENTORY_MEXICO, MOCK_TRUCKS_MEXICO, MOCK_TPL_PROCESSES_MEXICO, MOCK_PATIO } from './constants';
 import { getMarketResearch } from './services/geminiService';
-import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import ReactMarkdown from 'react-markdown';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const FINANCIAL_DATA = [
   { name: 'Jan', cost: 4000, revenue: 6400, profit: 2400, pallets: 1200 },
@@ -102,6 +110,8 @@ const COLORS = ['#004A99', '#F27D26', '#00AEEF', '#1A1A1A'];
 export default function App() {
   const [market, setMarket] = useState<Market>('USA');
   const [activeTab, setActiveTab] = useState('control-tower');
+  const [commercialSubTab, setCommercialSubTab] = useState<'pricing' | 'rebates' | 'contracts'>('pricing');
+  const [previousTab, setPreviousTab] = useState('control-tower');
   const [isAiHubOpen, setIsAiHubOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(warehouses[0] || null);
@@ -120,6 +130,8 @@ export default function App() {
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<WMSNotification[]>(MOCK_NOTIFICATIONS);
+  const [patioSlots, setPatioSlots] = useState<PatioSlot[]>(MOCK_PATIO);
+  const [toast, setToast] = useState<{message: string, type: string} | null>(null);
   
   const [isImporting, setIsImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<{
@@ -366,7 +378,8 @@ export default function App() {
             status: String(getVal('status') || 'Waiting'),
             dock: String(getVal('dock') || '-'),
             eta: String(getVal('eta') || '00:00'),
-            idling: Math.random() > 0.5
+            idling: Math.random() > 0.5,
+            warehouseId: selectedWarehouse?.id || 'wh-001'
           };
         });
         
@@ -396,11 +409,14 @@ export default function App() {
     type: 'sqm2'
   });
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [marketInsight, setMarketInsight] = useState<{headlines: string[], content: string[]} | null>(null);
+  const [selectedInsightIndex, setSelectedInsightIndex] = useState<number | null>(null);
+  const [mexicoIntelLang, setMexicoIntelLang] = useState<'en' | 'es'>('es');
+  const [isMarketLoading, setIsMarketLoading] = useState(false);
   const [adminSubTab, setAdminSubTab] = useState<'layout' | 'master-data'>('layout');
   const [optimizationLogs, setOptimizationLogs] = useState<{id: string, msg: string, time: string}[]>([]);
-  const [marketInsights, setMarketInsights] = useState<string>('');
   
-  const addNotification = (msg: string, type: 'market' | 'operational' | 'alert' | 'success' | 'info' = 'operational') => {
+  const addNotification = useCallback((msg: string, type: 'market' | 'operational' | 'alert' | 'success' | 'info' = 'operational') => {
     const newNotif: WMSNotification = {
       id: Math.random().toString(36).substr(2, 9),
       type,
@@ -410,10 +426,43 @@ export default function App() {
       read: false
     };
     setNotifications(prev => [newNotif, ...prev]);
-  };
+    setToast({ message: msg, type });
+    setTimeout(() => setToast(null), 4000);
+  }, []);
 
   const lang: Language = market === 'USA' ? 'en' : 'es';
   const t = translations[lang];
+
+  const getLocalizedStatus = (status: string) => {
+    if (lang === 'en') return status.replace(/-/g, ' ');
+    const statusMap: Record<string, string> = {
+      'collection': 'Recolección',
+      'in-transit-to-wh': 'En Tránsito al Almacén',
+      'unloading': 'Descarga',
+      'classifying': 'Clasificación',
+      'storage': 'Almacenamiento',
+      'picking': 'Surtido',
+      'cross-dock': 'Cruce de Andén',
+      'loading': 'Carga',
+      'delivery': 'Entrega',
+      'customer-facility': 'Instalación del Cliente',
+      'returning': 'Retorno',
+      'documentation': 'Documentación',
+      'in-yard': 'En Patio',
+      'waiting': 'Esperando'
+    };
+    return statusMap[status.toLowerCase()] || status;
+  };
+
+  const getLocalizedTruckType = (type: string) => {
+    if (lang === 'en') return type;
+    const typeMap: Record<string, string> = {
+      'Full Truck': 'Caja Completa',
+      'Thorton': 'Thorton',
+      '3.5 Van': 'Camioneta 3.5'
+    };
+    return typeMap[type] || type;
+  };
 
   // Operational State
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(MOCK_INVENTORY);
@@ -424,11 +473,15 @@ export default function App() {
   const itemsPerPage = 25;
   const [tplProcesses, setTplProcesses] = useState<TPLProcess[]>(MOCK_TPL_PROCESSES);
   const [selectedTplShipment, setSelectedTplShipment] = useState<TPLProcess | null>(null);
+  const [selectedTplWarehouseId, setSelectedTplWarehouseId] = useState('wh-1');
   const [trucks, setTrucks] = useState([
-    { id: 'TRK-001', carrier: 'Swift', type: 'Full Truck', driver: 'John Doe', status: 'In Yard', dock: 'Dock 4', eta: '08:00', idling: true },
-    { id: 'TRK-002', carrier: 'Schneider', type: 'Thorton', driver: 'Jane Smith', status: 'Unloading', dock: 'Dock 2', eta: '09:15', idling: false },
-    { id: 'TRK-003', carrier: 'Werner', type: '3.5 Van', driver: 'Bob Wilson', status: 'Waiting', dock: '-', eta: '10:30', idling: true },
-    { id: 'TRK-004', carrier: 'Swift', type: 'Full Truck', driver: 'Alice Brown', status: 'Waiting', dock: '-', eta: '11:00', idling: true },
+    { id: 'TRK-001', carrier: 'Swift', type: 'Full Truck', driver: 'John Doe', status: 'In Yard', dock: 'Dock 4', eta: '08:00', idling: true, warehouseId: 'wh-1' },
+    { id: 'TRK-002', carrier: 'Schneider', type: 'Thorton', driver: 'Jane Smith', status: 'Unloading', dock: 'Dock 2', eta: '09:15', idling: false, warehouseId: 'wh-1' },
+    { id: 'TRK-003', carrier: 'Werner', type: '3.5 Van', driver: 'Bob Wilson', status: 'Waiting', dock: '-', eta: '10:30', idling: true, warehouseId: 'wh-1' },
+    { id: 'TRK-004', carrier: 'Swift', type: 'Full Truck', driver: 'Alice Brown', status: 'Waiting', dock: '-', eta: '11:00', idling: true, warehouseId: 'wh-1' },
+    { id: 'TRK-005', carrier: 'DHL', type: '3.5 Van', driver: 'Carlos Ruiz', status: 'In Yard', dock: 'Dock 1', eta: '07:30', idling: false, warehouseId: 'wh-2' },
+    { id: 'TRK-006', carrier: 'FedEx', type: 'Thorton', driver: 'Maria Garcia', status: 'Waiting', dock: '-', eta: '08:45', idling: true, warehouseId: 'wh-2' },
+    { id: 'TRK-007', carrier: 'Estafeta', type: 'Full Truck', driver: 'Luis Hernandez', status: 'Unloading', dock: 'Dock 3', eta: '09:00', idling: false, warehouseId: 'wh-2' },
   ]);
 
   const filteredWarehouses = useMemo(() => {
@@ -437,12 +490,13 @@ export default function App() {
 
   const filteredTrucks = useMemo(() => {
     return trucks.filter(t => 
-      t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.warehouseId === selectedTplWarehouseId) &&
+      (t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.carrier.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.driver.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.status.toLowerCase().includes(searchQuery.toLowerCase())
+      t.status.toLowerCase().includes(searchQuery.toLowerCase()))
     );
-  }, [trucks, searchQuery]);
+  }, [trucks, searchQuery, selectedTplWarehouseId]);
 
   // Computed Analytics Data
   const totalPallets = useMemo(() => {
@@ -511,44 +565,70 @@ export default function App() {
   // New Modal States
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [aiTasks, setAiTasks] = useState([
-    { id: 'TASK-01', task: 'Reassign Dock 2 to TRK-902', priority: 'High', impact: '+15% Speed', desc: 'Dock 2 is currently underutilized while Dock 4 has a queue. Reassigning TRK-902 will balance the load.' },
-    { id: 'TASK-02', task: 'Relocate SKU-004 to Zone A', priority: 'Medium', impact: '-10% Travel', desc: 'SKU-004 has high picking frequency. Moving it closer to the packing station will reduce travel time.' },
-    { id: 'TASK-03', task: 'Adjust Night Shift Staffing', priority: 'High', impact: '+8% Productivity', desc: 'Projected volume for tonight is 20% higher. Adding 2 temporary staff members is recommended.' },
-    { id: 'TASK-04', task: 'Update Slotting for Seasonal Items', priority: 'Low', impact: '+5% Space', desc: 'Seasonal items are currently taking up prime locations. Relocating them to upper racks will free up floor space.' },
-    { id: 'TASK-05', task: 'Optimize Forklift Routes', priority: 'Medium', impact: '-12% Energy', desc: 'Forklift traffic in Zone B is congested. AI suggests a one-way traffic flow to improve safety and speed.' },
-    { id: 'TASK-06', task: 'Consolidate Partial Pallets', priority: 'Low', impact: '+18% Capacity', desc: 'Multiple partial pallets of SKU-992 are scattered. Consolidating them will free up 4 rack positions.' },
-    { id: 'TASK-07', task: 'Pre-stage High Priority Shipments', priority: 'High', impact: '-20m Lead Time', desc: 'Upcoming shipments for Customer X are high priority. Pre-staging them in Zone S will expedite loading.' }
+    { id: 'TASK-01', task: lang === 'en' ? 'Reassign Dock 2 to TRK-902' : 'Reasignar Muelle 2 a TRK-902', priority: 'High', impact: '+15% Speed', desc: lang === 'en' ? 'Dock 2 is currently underutilized while Dock 4 has a queue.' : 'El Muelle 2 está subutilizado mientras que el Muelle 4 tiene fila.' },
+    { id: 'TASK-02', task: lang === 'en' ? 'Relocate SKU-004 to Zone A' : 'Reubicar SKU-004 a Zona A', priority: 'Medium', impact: '-10% Travel', desc: lang === 'en' ? 'SKU-004 has high picking frequency.' : 'SKU-004 tiene alta frecuencia de surtido.' },
+    { id: 'TASK-03', task: lang === 'en' ? 'Adjust Night Shift Staffing' : 'Ajustar Personal de Turno Nocturno', priority: 'High', impact: '+8% Productivity', desc: lang === 'en' ? 'Projected volume for tonight is 20% higher.' : 'El volumen proyectado para esta noche es 20% mayor.' },
+    { id: 'TASK-04', task: lang === 'en' ? 'Update Slotting for Seasonal Items' : 'Actualizar Slotting para Artículos Estacionales', priority: 'Low', impact: '+5% Space', desc: lang === 'en' ? 'Seasonal items are currently taking up prime locations.' : 'Los artículos estacionales ocupan actualmente ubicaciones prime.' }
   ]);
   // Update AI Tasks dynamically based on data
   useEffect(() => {
     if (selectedWarehouse) {
       const occupancy = (selectedWarehouse.currentOccupancy / selectedWarehouse.capacity) * 100;
-      const newTasks = [...aiTasks];
+      const lowStockItems = inventoryItems.filter(i => i.quantity < 50);
+      const delayedTrucks = trucks.filter(t => t.status === 'delayed');
       
-      if (occupancy > 90) {
-        newTasks[0] = { 
+      const newTasks = [];
+      
+      if (occupancy > 85) {
+        newTasks.push({ 
           id: 'TASK-01', 
           task: lang === 'en' ? 'Critical Space Optimization' : 'Optimización Crítica de Espacio', 
           priority: 'High', 
           impact: '+12% Capacity', 
           desc: lang === 'en' ? `Warehouse is at ${occupancy.toFixed(1)}% capacity. AI recommends immediate consolidation of partial pallets in Zone B.` : `El almacén está al ${occupancy.toFixed(1)}% de capacidad. La IA recomienda la consolidación inmediata de pallets parciales en la Zona B.` 
-        };
+        });
       }
       
-      const lowStockItems = inventoryItems.filter(i => i.quantity < 50);
       if (lowStockItems.length > 0) {
-        newTasks[1] = {
+        newTasks.push({
           id: 'TASK-02',
           task: lang === 'en' ? `Restock ${lowStockItems.length} Low Items` : `Reabastecer ${lowStockItems.length} Artículos Bajos`,
           priority: 'Medium',
           impact: 'Avoid OOS',
-          desc: lang === 'en' ? `Detected ${lowStockItems.length} items with stock below safety threshold. Recommend generating replenishment orders.` : `Se detectaron ${lowStockItems.length} artículos con stock por debajo del umbral de seguridad. Se recomienda generar órdenes de reabastecimiento.`
-        };
+          desc: lang === 'en' ? `Detected ${lowStockItems.length} items with stock below safety threshold. Recommend generating replenishment orders for ${lowStockItems.map(i => i.sku).join(', ')}.` : `Se detectaron ${lowStockItems.length} artículos con stock por debajo del umbral de seguridad. Se recomienda generar órdenes de reabastecimiento para ${lowStockItems.map(i => i.sku).join(', ')}.`
+        });
+      }
+
+      if (delayedTrucks.length > 0) {
+        newTasks.push({
+          id: 'TASK-03',
+          task: lang === 'en' ? 'Reschedule Delayed Inbounds' : 'Reprogramar Entradas Retrasadas',
+          priority: 'High',
+          impact: 'Dock Flow',
+          desc: lang === 'en' ? `${delayedTrucks.length} trucks are delayed. AI suggests opening Dock 6 for overflow to prevent yard congestion.` : `${delayedTrucks.length} camiones están retrasados. La IA sugiere abrir el Muelle 6 para el desbordamiento y evitar congestión en el patio.`
+        });
+      }
+
+      const highVelocityMisplaced = inventoryItems.filter(i => i.velocity === 'High' && !i.location.startsWith('A'));
+      if (highVelocityMisplaced.length > 0) {
+        newTasks.push({
+          id: 'TASK-04',
+          task: lang === 'en' ? 'Optimize High-Velocity Slotting' : 'Optimizar Slotting de Alta Velocidad',
+          priority: 'Medium',
+          impact: '-15% Pick Time',
+          desc: lang === 'en' ? `${highVelocityMisplaced.length} high-velocity items are stored in slow zones. Relocating them to Zone A will optimize picking routes.` : `${highVelocityMisplaced.length} artículos de alta velocidad están en zonas lentas. Reubicarlos a la Zona A optimizará las rutas de surtido.`
+        });
+      }
+
+      // Add some static but realistic tasks if list is short
+      if (newTasks.length < 4) {
+        newTasks.push({ id: 'TASK-05', task: lang === 'en' ? 'Optimize Forklift Routes' : 'Optimizar Rutas de Montacargas', priority: 'Medium', impact: '-12% Energy', desc: lang === 'en' ? 'Forklift traffic in Zone B is congested. AI suggests a one-way traffic flow.' : 'El tráfico de montacargas en la Zona B está congestionado. La IA sugiere un flujo de tráfico de una sola vía.' });
+        newTasks.push({ id: 'TASK-06', task: lang === 'en' ? 'Consolidate Partial Pallets' : 'Consolidar Pallets Parciales', priority: 'Low', impact: '+18% Capacity', desc: lang === 'en' ? 'Multiple partial pallets are scattered. Consolidating them will free up rack positions.' : 'Múltiples pallets parciales están dispersos. Consolidarlos liberará posiciones de rack.' });
       }
 
       setAiTasks(newTasks);
     }
-  }, [selectedWarehouse, inventoryItems.length, lang]);
+  }, [selectedWarehouse, inventoryItems.length, trucks.length, lang]);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [cfoQuery, setCfoQuery] = useState('');
   const [cfoChat, setCfoChat] = useState<{role: 'user' | 'ai', content: string}[]>([]);
@@ -561,7 +641,50 @@ export default function App() {
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
   const [isSyncingSystems, setIsSyncingSystems] = useState(false);
   const [isInventoryCompact, setIsInventoryCompact] = useState(false);
+
+  // Dynamic Risk Score Calculation
+  const riskScore = useMemo(() => {
+    let score = 95; // Start high (good)
+    if (selectedWarehouse) {
+      const occupancy = (selectedWarehouse.currentOccupancy / selectedWarehouse.capacity) * 100;
+      if (occupancy > 90) score -= 15;
+      else if (occupancy > 80) score -= 5;
+    }
+    const lowStock = inventoryItems.filter(i => i.quantity < 50).length;
+    score -= Math.min(lowStock * 2, 20);
+    
+    const delayedTrucks = trucks.filter(t => t.status === 'delayed').length;
+    score -= Math.min(delayedTrucks * 5, 20);
+    
+    return Math.max(score, 40);
+  }, [selectedWarehouse, inventoryItems, trucks]);
+
+  // Dynamic Risks based on real data
+  const dynamicRisks = useMemo(() => {
+    const risks = [];
+    if (selectedWarehouse && (selectedWarehouse.currentOccupancy / selectedWarehouse.capacity) > 0.9) {
+      risks.push({ id: 'RSK-101', title: lang === 'en' ? 'Critical Capacity Warning' : 'Advertencia de Capacidad Crítica', severity: 'High', area: 'Warehouse Floor', time: 'Just now' });
+    }
+    const lowStock = inventoryItems.filter(i => i.quantity < 50);
+    if (lowStock.length > 5) {
+      risks.push({ id: 'RSK-102', title: lang === 'en' ? 'Stockout Risk Detected' : 'Riesgo de Desabastecimiento Detectado', severity: 'Medium', area: 'Inventory Control', time: '12m ago' });
+    }
+    const delayedTrucks = trucks.filter(t => t.status === 'delayed');
+    if (delayedTrucks.length > 0) {
+      risks.push({ id: 'RSK-103', title: lang === 'en' ? 'Inbound/Outbound Delay' : 'Retraso de Entrada/Salida', severity: 'High', area: 'Docking Area', time: '24m ago' });
+    }
+    
+    // Fallback if no risks
+    if (risks.length === 0) {
+      risks.push({ id: 'RSK-000', title: lang === 'en' ? 'System Integrity Check' : 'Verificación de Integridad del Sistema', severity: 'Low', area: 'Core Systems', time: '1h ago' });
+    }
+    
+    return risks;
+  }, [selectedWarehouse, inventoryItems, trucks, lang]);
+
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [selectedPricing, setSelectedPricing] = useState<any | null>(null);
+  const [selectedRebate, setSelectedRebate] = useState<any | null>(null);
   const [selectedRackDetails, setSelectedRackDetails] = useState<any>(null);
   const [external3DAction, setExternal3DAction] = useState<{ type: 'audit' | 'relocate', rackId: string, timestamp: number } | null>(null);
   const [selectedZone, setSelectedZone] = useState<any>(null);
@@ -570,6 +693,7 @@ export default function App() {
   const [laborAdvice, setLaborAdvice] = useState<string>('');
   const [isLaborAdviceLoading, setIsLaborAdviceLoading] = useState(false);
   const [slottingAdvice, setSlottingAdvice] = useState<string>('');
+  const [slottingSuggestions, setSlottingSuggestions] = useState<{sku: string, current: string, suggested: string, reason: string}[]>([]);
   const [isSlottingLoading, setIsSlottingLoading] = useState(false);
   const [complianceAudit, setComplianceAudit] = useState<string>('');
   const [isComplianceLoading, setIsComplianceLoading] = useState(false);
@@ -597,6 +721,35 @@ export default function App() {
     { id: 'PKT-003', type: 'Master Data', size: '2.1MB', time: '45s ago' }
   ]);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const predictiveData = useMemo(() => {
+    // Calculate rotation based on inventory velocity and recent processes
+    const categories = ['Engine', 'Brakes', 'Suspension', 'Electrical', 'Body', 'Other'];
+    return categories.map(cat => {
+      const items = inventoryItems.filter(i => i.category === cat);
+      const highVelocityCount = items.filter(i => i.velocity === 'High').length;
+      const totalCount = items.length || 1;
+      const rotation = (highVelocityCount / totalCount * 25 + Math.random() * 5).toFixed(1);
+      const trendValue = (Math.random() * 10 - 5).toFixed(1);
+      return {
+        category: cat,
+        rotation: `${rotation}x`,
+        trend: `${parseFloat(trendValue) > 0 ? '+' : ''}${trendValue}%`,
+        health: parseFloat(rotation) > 20 ? 'Critical' : parseFloat(rotation) > 10 ? 'Optimal' : 'Slow',
+        details: lang === 'en' 
+          ? `Based on ${items.length} SKUs. ${highVelocityCount} are high-velocity.` 
+          : `Basado en ${items.length} SKUs. ${highVelocityCount} son de alta velocidad.`
+      };
+    });
+  }, [inventoryItems, lang]);
+
+  const projectedRotation = useMemo(() => {
+    return [
+      { name: 'W1', value: 400 + Math.random() * 100 },
+      { name: 'W2', value: 300 + Math.random() * 100 },
+      { name: 'W3', value: 600 + Math.random() * 100 },
+      { name: 'W4', value: 800 + Math.random() * 100 }
+    ];
+  }, [inventoryItems.length]);
   const [selectedHub, setSelectedHub] = useState<any>(null);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [isProtocolVerified, setIsProtocolVerified] = useState(false);
@@ -631,30 +784,73 @@ export default function App() {
   const [truckStatusFilter, setTruckStatusFilter] = useState('all');
   const [selectedCarrier, setSelectedCarrier] = useState<any>(null);
   const [activeGateTab, setActiveGateTab] = useState<'internal' | 'third-party'>('third-party');
+  const [showNextSteps, setShowNextSteps] = useState(true);
+  const [nextSteps, setNextSteps] = useState([
+    { 
+      id: 1, 
+      title: lang === 'en' ? 'Confirm Truck Arrival' : 'Confirmar Llegada de Camión', 
+      description: lang === 'en' ? 'Verify ETA and dock availability for incoming shipments.' : 'Verificar ETA y disponibilidad de muelle para envíos entrantes.', 
+      completed: false, 
+      icon: <Truck className="w-4 h-4" />,
+      targetTab: 'patio'
+    },
+    { 
+      id: 2, 
+      title: lang === 'en' ? 'Verify Warehouse Space' : 'Verificar Espacio en Almacén', 
+      description: lang === 'en' ? 'Ensure enough capacity for the new inventory.' : 'Asegurar capacidad suficiente para el nuevo inventario.', 
+      completed: false, 
+      icon: <Layers className="w-4 h-4" />,
+      targetTab: 'map3d'
+    },
+    { 
+      id: 3, 
+      title: lang === 'en' ? 'Upload Master Data' : 'Cargar Datos Maestros', 
+      description: lang === 'en' ? 'Import missing SKU and order information via Interoperability Hub.' : 'Importar información faltante de SKU y pedidos vía Hub de Interoperabilidad.', 
+      completed: false, 
+      icon: <Database className="w-4 h-4" />,
+      targetModal: 'interop-hub'
+    },
+    { 
+      id: 4, 
+      title: lang === 'en' ? 'Confirm Arrival Date' : 'Confirmar Fecha de Llegada', 
+      description: lang === 'en' ? 'Set the expected timestamp for the inbound operation.' : 'Establecer la fecha y hora esperada para la operación de entrada.', 
+      completed: false, 
+      icon: <Calendar className="w-4 h-4" />,
+      targetModal: 'inbound'
+    },
+  ]);
 
-  // Dynamic Alerts for Control Tower
+  // Keep nextSteps localized
   useEffect(() => {
-    const alerts = [
-      lang === 'en' ? "Dock 4: Unloading delay detected (15m)" : "Muelle 4: Retraso de descarga detectado (15m)",
-      lang === 'en' ? "Zone B: Temperature variance in Cold Storage (+0.5°C)" : "Zona B: Variación de temperatura en Almacén Frío (+0.5°C)",
-      lang === 'en' ? "System: SAP ERP sync completed successfully" : "Sistema: Sincronización SAP ERP completada con éxito",
-      lang === 'en' ? "Security: Unauthorized gate entry attempt blocked" : "Seguridad: Intento de entrada no autorizada bloqueado",
-      lang === 'en' ? "AI: Slotting optimization recommended for Zone A" : "IA: Optimización de slotting recomendada para Zona A"
-    ];
-    
-    setRealTimeAlerts([alerts[0], alerts[1]]);
-    
-    const interval = setInterval(() => {
-      setRealTimeAlerts(prev => {
-        const nextAlert = alerts[Math.floor(Math.random() * alerts.length)];
-        if (prev.includes(nextAlert)) return prev;
-        return [nextAlert, ...prev].slice(0, 3);
-      });
-    }, 8000);
-    
-    return () => clearInterval(interval);
+    setNextSteps(prev => prev.map(step => {
+      const original = [
+        { id: 1, titleEn: 'Confirm Truck Arrival', titleEs: 'Confirmar Llegada de Camión', descEn: 'Verify ETA and dock availability for incoming shipments.', descEs: 'Verificar ETA y disponibilidad de muelle para envíos entrantes.' },
+        { id: 2, titleEn: 'Verify Warehouse Space', titleEs: 'Verificar Espacio en Almacén', descEn: 'Ensure enough capacity for the new inventory.', descEs: 'Asegurar capacidad suficiente para el nuevo inventario.' },
+        { id: 3, titleEn: 'Upload Master Data', titleEs: 'Cargar Datos Maestros', descEn: 'Import missing SKU and order information via Interoperability Hub.', descEs: 'Importar información faltante de SKU y pedidos vía Hub de Interoperabilidad.' },
+        { id: 4, titleEn: 'Confirm Arrival Date', titleEs: 'Confirmar Fecha de Llegada', descEn: 'Set the expected timestamp for the inbound operation.', descEs: 'Establecer la fecha y hora esperada para la operación de entrada.' },
+      ].find(o => o.id === step.id);
+      
+      if (original) {
+        return {
+          ...step,
+          title: lang === 'en' ? original.titleEn : original.titleEs,
+          description: lang === 'en' ? original.descEn : original.descEs
+        };
+      }
+      return step;
+    }));
   }, [lang]);
 
+  const [isEditingPricing, setIsEditingPricing] = useState(false);
+  const [showPricingHistory, setShowPricingHistory] = useState(false);
+  const [pricingHistory, setPricingHistory] = useState([
+    { date: '2026-01-15', price: 12.50, reason: 'Annual adjustment' },
+    { date: '2025-11-20', price: 11.90, reason: 'Promotion' },
+    { date: '2025-06-01', price: 12.20, reason: 'Initial contract' }
+  ]);
+
+  // Dynamic Alerts for Control Tower - REMOVED HARDCODED ALERTS
+  
   const exportReport = (title: string, data: any) => {
     const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(JSON.stringify(data, null, 2))}`;
     const link = document.createElement("a");
@@ -684,6 +880,17 @@ export default function App() {
       import('./services/geminiService').then(m => {
         m.getSlottingAdvice(inventoryItems, lang).then(advice => {
           setSlottingAdvice(advice);
+          
+          // Generate real suggestions based on inventory
+          const suggestions = inventoryItems
+            .filter(i => i.velocity === 'High' && !i.location.startsWith('A'))
+            .map(i => ({
+              sku: i.sku,
+              current: i.location,
+              suggested: `A-01-${Math.floor(Math.random() * 20) + 1}`,
+              reason: lang === 'en' ? 'High velocity SKU in slow zone' : 'SKU de alta velocidad en zona lenta'
+            }));
+          setSlottingSuggestions(suggestions);
           setIsSlottingLoading(false);
         });
       });
@@ -703,23 +910,39 @@ export default function App() {
     }
   }, [activeModal, lang, inventoryItems, modalLevel, selectedSubItem]);
 
-  // Real-time alerts monitor
+  // Real-time alerts monitor - Improved to be more dynamic and data-driven
   useEffect(() => {
-    const interval = setInterval(() => {
+    const fetchAlerts = () => {
       const operationalData = {
         activeShipments: tplProcesses.length,
         warehouseOccupancy: selectedWarehouse?.currentOccupancy || 0,
-        systemHealth: 'optimal'
+        totalItems: inventoryItems.length,
+        lowStockCount: inventoryItems.filter(i => i.quantity < 50).length,
+        activeTrucks: trucks.filter(t => t.status === 'in-transit' || t.status === 'loading').length,
+        systemHealth: 'optimal',
+        timestamp: new Date().toISOString()
       };
+      
       import('./services/geminiService').then(m => {
         m.getRealTimeAlerts(operationalData, lang).then(alertsText => {
-          const alerts = alertsText.split('\n').filter(a => a.trim().length > 0);
-          setRealTimeAlerts(alerts);
+          // Clean up the response to get clean bullet points or lines
+          const alerts = alertsText
+            .split('\n')
+            .map(a => a.replace(/^[*-]\s*/, '').trim())
+            .filter(a => a.length > 0)
+            .slice(0, 3);
+          
+          if (alerts.length > 0) {
+            setRealTimeAlerts(alerts);
+          }
         });
       });
-    }, 30000); // Every 30 seconds
+    };
+
+    fetchAlerts(); // Initial fetch
+    const interval = setInterval(fetchAlerts, 20000); // Every 20 seconds
     return () => clearInterval(interval);
-  }, [lang, tplProcesses, selectedWarehouse]);
+  }, [lang, tplProcesses.length, selectedWarehouse, inventoryItems.length, trucks.length]);
 
   // Dynamic Data Packets Simulation
   useEffect(() => {
@@ -738,11 +961,50 @@ export default function App() {
     }
   }, [activeModal, modalLevel]);
 
-  useEffect(() => {
-    if (activeTab === 'admin') {
-      setEditingWarehouse(selectedWarehouse);
+  const handleTabChange = (tab: string) => {
+    setPreviousTab(activeTab);
+    
+    // Handle commercial sub-tabs from sidebar (if any remain) or main commercial tab
+    if (['pricing', 'rebates', 'contracts'].includes(tab)) {
+      setCommercialSubTab(tab as any);
+      setActiveTab('commercial');
+    } else if (tab === 'commercial') {
+      setActiveTab('commercial');
+    } else {
+      setActiveTab(tab);
     }
-  }, [activeTab, selectedWarehouse]);
+  };
+
+  // Market-specific data switching
+  useEffect(() => {
+    if (market === 'USA') {
+      setInventoryItems(MOCK_INVENTORY_USA);
+      setTrucks(MOCK_TRUCKS_USA);
+      setTplProcesses(MOCK_TPL_PROCESSES_USA);
+    } else {
+      setInventoryItems(MOCK_INVENTORY_MEXICO);
+      setTrucks(MOCK_TRUCKS_MEXICO);
+      setTplProcesses(MOCK_TPL_PROCESSES_MEXICO);
+    }
+  }, [market]);
+
+  useEffect(() => {
+    if (activeTab === 'control-tower') {
+      setIsMarketLoading(true);
+      const intelLang = market === 'MEXICO' ? mexicoIntelLang : 'en';
+      getMarketResearch(market, intelLang).then(insight => {
+        try {
+          const parsed = typeof insight === 'string' ? JSON.parse(insight) : insight;
+          setMarketInsight(parsed);
+        } catch (e) {
+          console.error("Error parsing market insight", e);
+          setMarketInsight({ headlines: ['Market Analysis'], content: [insight] });
+        }
+        setIsMarketLoading(false);
+        setSelectedInsightIndex(0);
+      });
+    }
+  }, [activeTab, market, mexicoIntelLang]);
 
   const [newWarehouseData, setNewWarehouseData] = useState<Partial<Warehouse>>({
     name: '',
@@ -755,9 +1017,6 @@ export default function App() {
     }
   });
 
-  useEffect(() => {
-    getMarketResearch().then(setMarketInsights);
-  }, []);
 
   const toggleMarket = () => {
     setMarket(prev => prev === 'USA' ? 'MEXICO' : 'USA');
@@ -784,6 +1043,8 @@ export default function App() {
         { id: 'patio', icon: <Truck className="w-4 h-4" />, label: t.truckManagement },
         { id: 'tpl', icon: <Activity className="w-4 h-4" />, label: t.tpl },
         { id: 'assembly', icon: <Cpu className="w-4 h-4" />, label: t.assemblyLine },
+        { id: 'advanced-logistics', icon: <Zap className="w-4 h-4" />, label: lang === 'en' ? 'Advanced Ops' : 'Operaciones Avanzadas' },
+        { id: 'tpl-billing', icon: <DollarSign className="w-4 h-4" />, label: lang === 'en' ? '3PL Billing' : 'Facturación 3PL' },
       ]
     },
     {
@@ -791,7 +1052,7 @@ export default function App() {
       label: lang === 'en' ? 'Commercial' : 'Comercial',
       icon: <DollarSign className="w-5 h-5" />,
       items: [
-        { id: 'commercial', icon: <DollarSign className="w-4 h-4" />, label: t.commercial },
+        { id: 'commercial', icon: <DollarSign className="w-4 h-4" />, label: lang === 'en' ? 'Management Console' : 'Consola de Gestión' },
         { id: 'research', icon: <Globe2 className="w-4 h-4" />, label: t.strategicResearch },
       ]
     },
@@ -892,7 +1153,7 @@ export default function App() {
                     {category.items.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => setActiveTab(item.id)}
+                        onClick={() => handleTabChange(item.id)}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group ${
                           activeTab === item.id 
                           ? 'bg-porteo-blue text-white shadow-lg shadow-porteo-blue/20' 
@@ -1008,7 +1269,13 @@ export default function App() {
                           <Users className="w-4 h-4" />
                           {lang === 'en' ? 'Profile' : 'Perfil'}
                         </button>
-                        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors">
+                        <button 
+                          onClick={() => {
+                            handleTabChange('admin');
+                            setIsProfileMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
+                        >
                           <Settings className="w-4 h-4" />
                           {lang === 'en' ? 'Settings' : 'Configuración'}
                         </button>
@@ -1031,7 +1298,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Content Area */}
-        <div className="flex-1 overflow-y-auto p-8 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-8">
           {!selectedWarehouse && activeTab !== 'admin' && activeTab !== 'intelligence-agents' && (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-6">
               <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
@@ -1118,6 +1385,97 @@ export default function App() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-8">
+                    {/* Next Steps Guidance */}
+                    {showNextSteps && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="p-6 bg-porteo-orange/10 border border-porteo-orange/20 rounded-[32px] overflow-hidden"
+                      >
+                        <div className="flex justify-between items-center mb-6">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-porteo-orange rounded-xl text-white">
+                              <ArrowRight className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-white">
+                                {lang === 'en' ? 'Next Steps Guidance' : 'Guía de Próximos Pasos'}
+                              </h3>
+                              <p className="text-xs text-white/40 uppercase tracking-widest">
+                                {lang === 'en' ? 'Operational Readiness' : 'Preparación Operativa'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            {nextSteps.every(s => s.completed) && (
+                              <button 
+                                onClick={() => setNextSteps(prev => prev.map(s => ({ ...s, completed: false })))}
+                                className="text-xs font-bold text-porteo-orange uppercase hover:underline"
+                              >
+                                {lang === 'en' ? 'Reset Checklist' : 'Reiniciar Lista'}
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => setShowNextSteps(false)}
+                              className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {nextSteps.every(s => s.completed) ? (
+                            <div className="col-span-full p-8 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl text-center">
+                              <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
+                              <h4 className="text-xl font-bold text-white mb-2">
+                                {lang === 'en' ? 'All tasks complete!' : '¡Todas las tareas completadas!'}
+                              </h4>
+                              <p className="text-sm text-white/40">
+                                {lang === 'en' ? 'Your warehouse is ready for full operation. You can now monitor real-time metrics and AI insights.' : 'Su almacén está listo para la operación completa. Ahora puede monitorear métricas en tiempo real e insights de IA.'}
+                              </p>
+                            </div>
+                          ) : (
+                            nextSteps.map((step) => (
+                              <div 
+                                key={step.id}
+                                className={`p-4 rounded-2xl border transition-all cursor-pointer group ${
+                                  step.completed 
+                                    ? 'bg-emerald-500/10 border-emerald-500/20 opacity-60' 
+                                    : 'bg-white/5 border-white/10 hover:border-porteo-orange/30'
+                                }`}
+                                onClick={() => {
+                                  if (step.targetTab) {
+                                    handleTabChange(step.targetTab);
+                                  } else if (step.targetModal) {
+                                    setActiveModal(step.targetModal as any);
+                                  }
+                                  setNextSteps(prev => prev.map(s => s.id === step.id ? { ...s, completed: true } : s));
+                                  addNotification(lang === 'en' ? `Navigating to ${step.title}` : `Navegando a ${step.title}`, 'info');
+                                }}
+                              >
+                                <div className="flex gap-3">
+                                  <div className={`p-2 rounded-lg h-fit transition-colors ${step.completed ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/60 group-hover:bg-porteo-orange group-hover:text-white'}`}>
+                                    {step.completed ? <CheckCircle2 className="w-4 h-4" /> : step.icon}
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex justify-between items-start">
+                                      <h4 className={`text-sm font-bold ${step.completed ? 'text-emerald-500 line-through' : 'text-white'}`}>
+                                        {step.title}
+                                      </h4>
+                                      {!step.completed && <ArrowRight className="w-3 h-3 text-white/20 group-hover:text-porteo-orange transition-all" />}
+                                    </div>
+                                    <p className="text-[10px] text-white/40 leading-relaxed mt-1">
+                                      {step.description}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
                     {/* AI Control Tower Insights */}
                     <div className="glass p-6 rounded-3xl border-l-4 border-porteo-orange">
                       <div className="flex items-center justify-between mb-4">
@@ -1125,11 +1483,15 @@ export default function App() {
                           <div className="p-2 bg-porteo-orange/20 rounded-lg text-porteo-orange">
                             <Cpu className="w-5 h-5" />
                           </div>
-                          <h3 className="text-lg font-bold text-white">AI Control Tower</h3>
+                          <h3 className="text-lg font-bold text-white">
+                            {lang === 'en' ? 'AI Control Tower' : 'Torre de Control IA'}
+                          </h3>
                         </div>
                         <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
                           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                          <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest">ML Active</span>
+                          <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest">
+                            {lang === 'en' ? 'ML Active' : 'ML Activo'}
+                          </span>
                         </div>
                       </div>
                       <div className="space-y-4">
@@ -1177,13 +1539,91 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Market Intelligence */}
+                    <div className="glass p-6 rounded-3xl border-l-4 border-porteo-blue mb-8">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-porteo-blue/20 rounded-lg text-porteo-blue">
+                            <Globe2 className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-lg font-bold text-white">
+                            {market === 'MEXICO' ? (lang === 'en' ? 'Mexico Market Intelligence' : 'Inteligencia de Mercado México') : 'USA Market Intelligence'}
+                          </h3>
+                        </div>
+                        {market === 'MEXICO' && (
+                          <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
+                            <button 
+                              onClick={() => setMexicoIntelLang('es')}
+                              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${mexicoIntelLang === 'es' ? 'bg-porteo-blue text-white' : 'text-white/40 hover:text-white'}`}
+                            >
+                              ESP
+                            </button>
+                            <button 
+                              onClick={() => setMexicoIntelLang('en')}
+                              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${mexicoIntelLang === 'en' ? 'bg-porteo-blue text-white' : 'text-white/40 hover:text-white'}`}
+                            >
+                              ENG
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isMarketLoading ? (
+                        <div className="p-8 flex flex-col items-center justify-center gap-4">
+                          <RefreshCw className="w-8 h-8 text-porteo-blue animate-spin" />
+                          <p className="text-sm text-white/40 italic animate-pulse">
+                            {lang === 'en' ? `Analyzing ${market} trade corridors...` : `Analizando corredores comerciales de ${market}...`}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            {marketInsight?.headlines.map((headline, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setSelectedInsightIndex(idx)}
+                                className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between group ${
+                                  selectedInsightIndex === idx 
+                                    ? 'bg-porteo-blue/20 border-porteo-blue text-white' 
+                                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
+                                }`}
+                              >
+                                <span className="text-sm font-bold">{headline}</span>
+                                <ChevronRight className={`w-4 h-4 transition-transform ${selectedInsightIndex === idx ? 'translate-x-1 text-porteo-blue' : 'text-white/20 group-hover:text-white/40'}`} />
+                              </button>
+                            ))}
+                          </div>
+                          <div className="p-5 bg-black/20 rounded-2xl border border-white/5 min-h-[200px]">
+                            <AnimatePresence mode="wait">
+                              <motion.div
+                                key={selectedInsightIndex}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="text-sm text-white/80 leading-relaxed"
+                              >
+                                {selectedInsightIndex !== null && marketInsight?.content[selectedInsightIndex] ? (
+                                  <ReactMarkdown>{marketInsight.content[selectedInsightIndex]}</ReactMarkdown>
+                                ) : (
+                                  <p className="text-white/40 italic">{lang === 'en' ? 'Select a topic to view details.' : 'Seleccione un tema para ver detalles.'}</p>
+                                )}
+                              </motion.div>
+                            </AnimatePresence>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Recent Activity / Registered Orders */}
-                    <div className="glass p-8 rounded-3xl">
+                    <div className={`glass p-8 rounded-3xl border-t-4 ${market === 'MEXICO' ? 'border-emerald-500 shadow-lg shadow-emerald-500/5' : 'border-porteo-orange'}`}>
                       <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                          <Activity className="w-6 h-6 text-porteo-orange" />
-                          {lang === 'en' ? 'Recent Operations' : 'Operaciones Recientes'}
-                        </h3>
+                        <div className="flex items-center gap-3">
+                          <Activity className={`w-6 h-6 ${market === 'MEXICO' ? 'text-emerald-500' : 'text-porteo-orange'}`} />
+                          <h3 className="text-xl font-bold text-white">
+                            {lang === 'en' ? 'Recent Operations' : 'Operaciones Recientes'}
+                            {market === 'MEXICO' && <span className="ml-3 text-[10px] bg-emerald-500/20 text-emerald-500 px-2 py-1 rounded-full uppercase tracking-widest">Mexico Priority</span>}
+                          </h3>
+                        </div>
                         <div className="flex gap-2">
                           <button 
                             onClick={() => setShowRegisteredOrders(true)}
@@ -1209,12 +1649,12 @@ export default function App() {
                               </div>
                               <div>
                                 <p className="text-sm font-bold text-white group-hover:text-porteo-orange transition-colors">{process.truckId} - {process.customer}</p>
-                                <p className="text-[10px] text-white/40 uppercase tracking-widest">{process.truckType} • {process.origin} → {process.destination}</p>
+                                <p className="text-[10px] text-white/40 uppercase tracking-widest">{getLocalizedTruckType(process.truckType)} • {process.origin} → {process.destination}</p>
                               </div>
                             </div>
                             <div className="text-right">
                               <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${process.status === 'collection' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-porteo-blue/10 text-porteo-blue'}`}>
-                                {process.status}
+                                {getLocalizedStatus(process.status)}
                               </span>
                               <p className="text-[10px] text-white/40 mt-1">{new Date().toLocaleTimeString()}</p>
                             </div>
@@ -1232,12 +1672,12 @@ export default function App() {
                         </h4>
                         <div className="grid grid-cols-2 gap-3">
                           <button onClick={() => setActiveModal('cargo-visibility')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-porteo-orange/50 text-left transition-all">
-                            <p className="text-[10px] font-bold text-porteo-orange uppercase">{t.cargoVisibility}</p>
-                            <p className="text-[10px] text-white/40">Real-time tracking</p>
+                            <p className="text-[10px] font-bold text-porteo-orange uppercase truncate">{t.cargoVisibility}</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Real-time tracking' : 'Seguimiento en tiempo real'}</p>
                           </button>
                           <button onClick={() => setActiveModal('slotting-ai')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-porteo-orange/50 text-left transition-all">
                             <p className="text-[10px] font-bold text-porteo-orange uppercase">Slotting AI</p>
-                            <p className="text-[10px] text-white/40">Storage optimization</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Storage optimization' : 'Optimización de almacenamiento'}</p>
                           </button>
                         </div>
                       </div>
@@ -1249,13 +1689,13 @@ export default function App() {
                           {lang === 'en' ? 'Data Interoperability' : 'Interoperabilidad'}
                         </h4>
                         <div className="grid grid-cols-2 gap-3">
-                          <button onClick={() => setActiveModal('interop-hub')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-porteo-blue/50 text-left transition-all">
-                            <p className="text-[10px] font-bold text-porteo-blue uppercase">{t.interoperabilityHub}</p>
-                            <p className="text-[10px] text-white/40">System integration</p>
+                          <button onClick={() => setActiveModal('interop-hub')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-porteo-blue/50 text-left transition-all overflow-hidden">
+                            <p className="text-[10px] font-bold text-porteo-blue uppercase truncate">{t.interoperabilityHub}</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'System integration' : 'Integración de sistemas'}</p>
                           </button>
                           <button onClick={() => setActiveTab('tpl')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-porteo-blue/50 text-left transition-all">
-                            <p className="text-[10px] font-bold text-porteo-blue uppercase">3PL Workflow</p>
-                            <p className="text-[10px] text-white/40">Digital flow</p>
+                            <p className="text-[10px] font-bold text-porteo-blue uppercase">{lang === 'en' ? '3PL Workflow' : 'Flujo 3PL'}</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Digital flow' : 'Flujo digital'}</p>
                           </button>
                         </div>
                       </div>
@@ -1269,11 +1709,11 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-3">
                           <button onClick={() => setActiveModal('risk-assessment')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-rose-500/50 text-left transition-all">
                             <p className="text-[10px] font-bold text-rose-500 uppercase">{t.riskAssessment}</p>
-                            <p className="text-[10px] text-white/40">Operational risk</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Operational risk' : 'Riesgo operativo'}</p>
                           </button>
                           <button onClick={() => setActiveModal('secure-docs')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-rose-500/50 text-left transition-all">
                             <p className="text-[10px] font-bold text-rose-500 uppercase">{t.secureDocs}</p>
-                            <p className="text-[10px] text-white/40">Encrypted vault</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Encrypted vault' : 'Bóveda encriptada'}</p>
                           </button>
                         </div>
                       </div>
@@ -1287,11 +1727,11 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-3">
                           <button onClick={() => setActiveModal('predictive-analytics')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-emerald-500/50 text-left transition-all">
                             <p className="text-[10px] font-bold text-emerald-500 uppercase">{t.predictiveAnalytics}</p>
-                            <p className="text-[10px] text-white/40">Rotation analysis</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Rotation analysis' : 'Análisis de rotación'}</p>
                           </button>
                           <button onClick={() => setActiveModal('port-city-sync')} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-emerald-500/50 text-left transition-all">
                             <p className="text-[10px] font-bold text-emerald-500 uppercase">{t.portCitySync}</p>
-                            <p className="text-[10px] text-white/40">Route optimization</p>
+                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Route optimization' : 'Optimización de rutas'}</p>
                           </button>
                         </div>
                       </div>
@@ -1301,7 +1741,9 @@ export default function App() {
                   <div className="space-y-8">
                     {/* System Health Legend (Interactive Stats) */}
                     <div className="glass p-6 rounded-3xl">
-                      <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-widest opacity-40">System Health</h4>
+                      <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-widest opacity-40">
+                        {lang === 'en' ? 'System Health' : 'Salud del Sistema'}
+                      </h4>
                       <div className="space-y-4">
                         <button 
                           onClick={() => setActiveModal('ai-tasks')}
@@ -1319,7 +1761,9 @@ export default function App() {
                         >
                           <div className="flex items-center gap-2">
                             <span className="w-2 h-2 bg-porteo-blue rounded-full" />
-                            <span className="text-[10px] text-white/70 uppercase font-bold tracking-widest">3 Active Market Hubs</span>
+                            <span className="text-[10px] text-white/70 uppercase font-bold tracking-widest">
+                              {lang === 'en' ? '3 Active Market Hubs' : '3 Hubs de Mercado Activos'}
+                            </span>
                           </div>
                           <ChevronRight className="w-4 h-4 text-white/20" />
                         </button>
@@ -1329,7 +1773,9 @@ export default function App() {
                         >
                           <div className="flex items-center gap-2">
                             <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                            <span className="text-[10px] text-white/70 uppercase font-bold tracking-widest">10% Efficiency Gain</span>
+                            <span className="text-[10px] text-white/70 uppercase font-bold tracking-widest">
+                              {lang === 'en' ? '10% Efficiency Gain' : '10% de Ganancia en Eficiencia'}
+                            </span>
                           </div>
                           <ChevronRight className="w-4 h-4 text-white/20" />
                         </button>
@@ -1363,18 +1809,18 @@ export default function App() {
                         ) : (
                           <>
                             <div 
-                              onClick={() => addNotification(lang === 'en' ? 'Opening Carta Porte Generator...' : 'Abriendo Generador de Carta Porte...', 'operational')}
+                              onClick={() => setActiveModal('carta-porte')}
                               className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-blue/50 transition-all cursor-pointer"
                             >
                               <p className="text-[10px] font-bold text-porteo-blue uppercase mb-1">{t.cartaPorte}</p>
-                              <p className="text-xs text-white/70">CFDI Carta Porte.</p>
+                              <p className="text-xs text-white/70">{lang === 'en' ? 'CFDI Bill of Lading.' : 'CFDI de Traslado.'}</p>
                             </div>
                             <div 
-                              onClick={() => addNotification(lang === 'en' ? 'Opening IMMEX Control Panel...' : 'Abriendo Panel de Control IMMEX...', 'operational')}
+                              onClick={() => setActiveModal('immex-control')}
                               className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-blue/50 transition-all cursor-pointer"
                             >
                               <p className="text-[10px] font-bold text-porteo-blue uppercase mb-1">{t.immex}</p>
-                              <p className="text-xs text-white/70">Anexo 24 Control.</p>
+                              <p className="text-xs text-white/70">{lang === 'en' ? 'Anexo 24 Control.' : 'Control de Anexo 24.'}</p>
                             </div>
                           </>
                         )}
@@ -1573,7 +2019,14 @@ export default function App() {
                                       <Package className={`${isInventoryCompact ? 'w-4 h-4' : 'w-6 h-6'} text-white/20 group-hover:text-porteo-orange/50 transition-all`} />
                                     </div>
                                     <div className="flex flex-col">
-                                      <span className={`text-white font-bold group-hover:text-porteo-orange transition-all ${isInventoryCompact ? 'text-sm' : 'text-base'}`}>{item.name}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-white font-bold group-hover:text-porteo-orange transition-all ${isInventoryCompact ? 'text-sm' : 'text-base'}`}>{item.name}</span>
+                                        {item.isKit && (
+                                          <span className="px-1.5 py-0.5 bg-porteo-orange/20 border border-porteo-orange/30 rounded text-[8px] font-black text-porteo-orange uppercase tracking-tighter">
+                                            KIT
+                                          </span>
+                                        )}
+                                      </div>
                                       <span className="text-[10px] font-mono text-white/40">{item.sku}</span>
                                     </div>
                                   </div>
@@ -1608,9 +2061,20 @@ export default function App() {
                                   </div>
                                 </td>
                                 <td className={`px-8 ${isInventoryCompact ? 'py-3' : 'py-6'} text-right`}>
-                                  <button className="p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all">
-                                    <ChevronRight className="w-4 h-4 text-white/40" />
-                                  </button>
+                                  <div className="flex items-center justify-end gap-2">
+                                    {item.isKit && (
+                                      <button 
+                                        onClick={() => handleTabChange('assembly')}
+                                        className="flex items-center gap-2 px-3 py-1.5 bg-porteo-orange/20 border border-porteo-orange/30 rounded-lg hover:bg-porteo-orange/30 transition-all text-porteo-orange text-[10px] font-bold uppercase"
+                                      >
+                                        <Wrench className="w-3 h-3" />
+                                        {lang === 'en' ? 'Assemble' : 'Ensamblar'}
+                                      </button>
+                                    )}
+                                    <button className="p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all">
+                                      <ChevronRight className="w-4 h-4 text-white/40" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             )) : (
@@ -1684,7 +2148,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'map3d' && selectedWarehouse && (
+            {activeTab === 'map3d' && (
               <motion.div 
                 key="map3d"
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1692,61 +2156,86 @@ export default function App() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="h-full flex flex-col space-y-4"
               >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">{t.map3d}</h2>
-                    <p className="text-white/40">{selectedWarehouse.name} • {selectedWarehouse.location}</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <button 
-                      onClick={() => {
-                        setNewWarehouseData({
-                          name: '',
-                          location: '',
-                          capacity: 50000,
-                          layout: {
-                            racks: { rows: 5, cols: 8 },
-                            docks: 4,
-                            zones: []
-                          }
-                        });
-                        setActiveModal('create-warehouse');
-                      }}
-                      className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-sm font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20 flex items-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      {lang === 'en' ? 'New Warehouse' : 'Nuevo Almacén'}
-                    </button>
+                {selectedWarehouse ? (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h2 className="text-3xl font-bold text-white tracking-tight">{t.map3d}</h2>
+                        <p className="text-white/40">{selectedWarehouse.name} • {selectedWarehouse.location}</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => {
+                            setNewWarehouseData({
+                              name: '',
+                              location: '',
+                              capacity: 50000,
+                              layout: {
+                                racks: { rows: 5, cols: 8 },
+                                docks: 4,
+                                zones: []
+                              }
+                            });
+                            setActiveModal('create-warehouse');
+                          }}
+                          className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-sm font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20 flex items-center gap-2"
+                        >
+                          <Plus className="w-4 h-4" />
+                          {lang === 'en' ? 'New Warehouse' : 'Nuevo Almacén'}
+                        </button>
+                        <button 
+                          onClick={() => handleTabChange('admin')}
+                          className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+                        >
+                          <Settings className="w-4 h-4" />
+                          {lang === 'en' ? 'Layout Editor' : 'Editor de Diseño'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      <Warehouse3D 
+                        lang={lang}
+                        warehouse={selectedWarehouse}
+                        externalAction={external3DAction}
+                        onViewDetails={(details) => {
+                          setSelectedRackDetails(details);
+                          setActiveModal('rack-detail');
+                        }}
+                        onAuditRack={(id) => {
+                          addNotification(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`, 'operational');
+                        }}
+                        onRelocateItems={(id) => {
+                          addNotification(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`, 'operational');
+                        }}
+                        addNotification={addNotification}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <WarehouseIcon className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse from the header or add a new one in the Admin panel to view the 3D layout.' 
+                        : 'Por favor, seleccione un almacén del encabezado o agregue uno nuevo en el panel de Administración para ver el plano 3D.'}
+                    </p>
                     <button 
                       onClick={() => setActiveTab('admin')}
-                      className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
                     >
-                      <Settings className="w-4 h-4" />
-                      {lang === 'en' ? 'Layout Editor' : 'Editor de Diseño'}
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
                     </button>
                   </div>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <Warehouse3D 
-                    warehouse={selectedWarehouse}
-                    externalAction={external3DAction}
-                    onViewDetails={(details) => {
-                      setSelectedRackDetails(details);
-                      setActiveModal('rack-detail');
-                    }}
-                    onAuditRack={(id) => {
-                      addNotification(lang === 'en' ? `Auditing Rack ${id}...` : `Auditando Rack ${id}...`, 'operational');
-                    }}
-                    onRelocateItems={(id) => {
-                      addNotification(lang === 'en' ? `Initiating relocation for Rack ${id}...` : `Iniciando reubicación para Rack ${id}...`, 'operational');
-                    }}
-                    addNotification={addNotification}
-                  />
-                </div>
+                )}
               </motion.div>
             )}
 
-            {activeTab === 'tpl' && selectedWarehouse && (
+            {activeTab === 'tpl' && (
               <motion.div 
                 key="tpl"
                 initial={{ opacity: 0, y: 20 }}
@@ -1754,23 +2243,48 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 className="h-full"
               >
-                <TPLWorkflow 
-                  language={lang} 
-                  shipments={tplProcesses}
-                  onUpdateStatus={(shipment) => {
-                    setTplProcesses(prev => prev.map(p => p.id === shipment.id ? shipment : p));
-                    addNotification(lang === 'en' ? `Shipment ${shipment.truckId} status updated to ${shipment.status}` : `Estatus de envío ${shipment.truckId} actualizado a ${shipment.status}`, 'operational');
-                  }}
-                  onViewDocuments={(shipment) => {
-                    setSelectedTplShipment(shipment);
-                    setActiveModal('view-documents');
-                  }}
-                  onBulkImport={(newShipments) => {
-                    setTplProcesses(prev => [...newShipments, ...prev]);
-                    addNotification(lang === 'en' ? `Successfully imported ${newShipments.length} shipments!` : `¡Se importaron con éxito ${newShipments.length} envíos!`, 'operational');
-                  }}
-                  addNotification={addNotification}
-                />
+                {selectedWarehouse ? (
+                  <TPLWorkflow 
+                    lang={lang} 
+                    shipments={tplProcesses}
+                    onUpdateStatus={(shipment) => {
+                      setTplProcesses(prev => prev.map(p => p.id === shipment.id ? shipment : p));
+                      addNotification(lang === 'en' ? `Shipment ${shipment.truckId} status updated to ${shipment.status}` : `Estatus de envío ${shipment.truckId} actualizado a ${shipment.status}`, 'operational');
+                    }}
+                    onViewDocuments={(shipment) => {
+                      setSelectedTplShipment(shipment);
+                      setActiveModal('view-documents');
+                    }}
+                    onBulkImport={(newShipments) => {
+                      setTplProcesses(prev => [...newShipments, ...prev]);
+                      addNotification(lang === 'en' ? `Successfully imported ${newShipments.length} shipments!` : `¡Se importaron con éxito ${newShipments.length} envíos!`, 'operational');
+                    }}
+                    addNotification={addNotification}
+                    selectedWarehouseId={selectedTplWarehouseId}
+                    onWarehouseChange={setSelectedTplWarehouseId}
+                    warehouses={filteredWarehouses}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <WarehouseIcon className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse from the header or add a new one in the Admin panel to view TPL workflows.' 
+                        : 'Por favor, seleccione un almacén del encabezado o agregue uno nuevo en el panel de Administración para ver los flujos de TPL.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -1782,11 +2296,11 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 className="h-full"
               >
-                <IntelligenceAgents language={lang} />
+                <IntelligenceAgents lang={lang} />
               </motion.div>
             )}
 
-            {activeTab === 'operations' && selectedWarehouse && (
+            {activeTab === 'operations' && (
               <motion.div 
                 key="operations"
                 initial={{ opacity: 0, y: 20 }}
@@ -1794,7 +2308,34 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 className="h-full"
               >
-                <WarehouseOperations language={lang} inventoryItems={inventoryItems} />
+                {selectedWarehouse ? (
+                  <WarehouseOperations 
+                    lang={lang} 
+                    market={market}
+                    inventoryItems={inventoryItems}
+                    addNotification={addNotification}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <WarehouseIcon className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse from the header or add a new one in the Admin panel to view warehouse operations.' 
+                        : 'Por favor, seleccione un almacén del encabezado o agregue uno nuevo en el panel de Administración para ver las operaciones de almacén.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -1807,12 +2348,22 @@ export default function App() {
                 className="h-full"
               >
                 <CommercialManagement 
-                  language={lang} 
+                  lang={lang} 
+                  market={market}
+                  defaultSubTab={commercialSubTab}
                   onViewContract={(contract) => {
                     setSelectedContract(contract);
                     setActiveModal('contract-detail');
                   }}
                   onNewContract={() => setActiveModal('new-contract')}
+                  onViewPricing={(pricing) => {
+                    setSelectedPricing(pricing);
+                    setActiveModal('pricing-detail');
+                  }}
+                  onViewRebate={(rebate) => {
+                    setSelectedRebate(rebate);
+                    setActiveModal('rebate-detail');
+                  }}
                 />
               </motion.div>
             )}
@@ -1932,386 +2483,6 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'patio' && selectedWarehouse && (
-              <motion.div 
-                key="patio"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="space-y-8"
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">{t.truckManagement}</h2>
-                    <p className="text-white/40 text-sm mt-1">Register and manage third-party carriers and yard operations</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="relative">
-                      <input 
-                        type="file" 
-                        id="truck-upload" 
-                        className="hidden" 
-                        onChange={(e) => {
-                          if (e.target.files?.[0]) {
-                            const file = e.target.files[0];
-                            setIsProcessing(true);
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                              try {
-                                const data = new Uint8Array(event.target?.result as ArrayBuffer);
-                                const workbook = XLSX.read(data, { type: 'array' });
-                                const sheetName = workbook.SheetNames[0];
-                                const sheet = workbook.Sheets[sheetName];
-                                const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
-                                
-                                const newTrucks = jsonData.map((row, idx) => ({
-                                  id: row.id || row.ID || `TRK-IMP-${idx}`,
-                                  carrier: row.carrier || row.Carrier || row.Carrier_Name || 'Unknown',
-                                  type: row.type || row.Type || 'Full Truck',
-                                  driver: row.driver || row.Driver || 'Unknown',
-                                  status: 'Waiting',
-                                  dock: '-',
-                                  eta: row.eta || row.ETA || 'TBD',
-                                  idling: false
-                                }));
-
-                                setTrucks(prev => [...newTrucks, ...prev]);
-                                addNotification(lang === 'en' ? `Successfully processed ${file.name}. ${newTrucks.length} trucks added.` : `Procesado con éxito ${file.name}. ${newTrucks.length} camiones añadidos.`, 'operational');
-                              } catch (err) {
-                                console.error('Error parsing truck data:', err);
-                                addNotification(lang === 'en' ? 'Error parsing file.' : 'Error al analizar el archivo.', 'alert');
-                              } finally {
-                                setIsProcessing(false);
-                              }
-                            };
-                            reader.readAsArrayBuffer(file);
-                          }
-                        }} 
-                        accept=".xlsx,.xls,.csv"
-                      />
-                      <label 
-                        htmlFor="truck-upload"
-                        className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2 cursor-pointer"
-                      >
-                        <Upload className="w-4 h-4" />
-                        {lang === 'en' ? 'Upload Fleet Data' : 'Subir Datos de Flota'}
-                      </label>
-                    </div>
-                    <button 
-                      onClick={() => setActiveModal('gate-entry')}
-                      className="px-4 py-2 bg-porteo-orange rounded-xl text-sm font-bold text-white hover:bg-porteo-orange/90 transition-colors flex items-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      {lang === 'en' ? 'Register New Truck' : 'Registrar Nuevo Camión'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-8">
-                    {/* Active Trucks List */}
-                    <div className="glass p-8 rounded-3xl">
-                      <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-white">Active Units in Yard</h3>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => setTruckStatusFilter(truckStatusFilter === 'Unloading' ? 'all' : 'Unloading')}
-                            className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase transition-all ${truckStatusFilter === 'Unloading' ? 'bg-emerald-500 text-white' : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'}`}
-                          >
-                            {trucks.filter(t => t.status === 'Unloading').length} Unloading
-                          </button>
-                          <button 
-                            onClick={() => setTruckStatusFilter(truckStatusFilter === 'Waiting' ? 'all' : 'Waiting')}
-                            className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase transition-all ${truckStatusFilter === 'Waiting' ? 'bg-porteo-orange text-white' : 'bg-porteo-orange/10 text-porteo-orange hover:bg-porteo-orange/20'}`}
-                          >
-                            {trucks.filter(t => t.status === 'Waiting').length} Waiting
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="mb-6 flex gap-4">
-                        <div className="flex-1 relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                          <input 
-                            type="text" 
-                            placeholder={lang === 'en' ? "Filter by Truck ID, Carrier..." : "Filtrar por ID, Transportista..."}
-                            value={truckSearchQuery}
-                            onChange={(e) => setTruckSearchQuery(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:border-porteo-orange/50 outline-none transition-all"
-                          />
-                        </div>
-                        <select 
-                          value={truckStatusFilter}
-                          onChange={(e) => setTruckStatusFilter(e.target.value)}
-                          className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white outline-none"
-                        >
-                          <option value="all">All Status</option>
-                          <option value="In Yard">In Yard</option>
-                          <option value="Unloading">Unloading</option>
-                          <option value="Waiting">Waiting</option>
-                        </select>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="text-left border-b border-white/10">
-                              <th className="pb-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Truck ID</th>
-                              <th className="pb-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Carrier</th>
-                              <th className="pb-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Type</th>
-                              <th className="pb-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Status</th>
-                              <th className="pb-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">Dock</th>
-                              <th className="pb-4 text-[10px] font-bold text-white/40 uppercase tracking-widest text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/5">
-                            {trucks
-                              .filter(t => {
-                                const effectiveSearch = truckSearchQuery || searchQuery;
-                                const matchesSearch = t.id.toLowerCase().includes(effectiveSearch.toLowerCase()) || t.carrier.toLowerCase().includes(effectiveSearch.toLowerCase());
-                                const matchesStatus = truckStatusFilter === 'all' || t.status === truckStatusFilter;
-                                return matchesSearch && matchesStatus;
-                              })
-                              .map((truck, i) => (
-                              <tr key={i} className="group hover:bg-white/5 transition-colors">
-                                <td className="py-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-white/5 rounded-lg">
-                                      <Truck className="w-4 h-4 text-porteo-orange" />
-                                    </div>
-                                    <span className="text-sm font-bold text-white">{truck.id}</span>
-                                  </div>
-                                </td>
-                                <td className="py-4 text-sm text-white/60">{truck.carrier}</td>
-                                <td className="py-4 text-sm text-white/60">{truck.type}</td>
-                                <td className="py-4">
-                                  <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
-                                    truck.status === 'Unloading' ? 'bg-emerald-500/10 text-emerald-500' : 
-                                    truck.status === 'In Yard' ? 'bg-porteo-blue/10 text-porteo-blue' : 
-                                    'bg-porteo-orange/10 text-porteo-orange'
-                                  }`}>
-                                    {truck.status}
-                                  </span>
-                                </td>
-                                <td className="py-4 text-sm font-mono text-white/40">{truck.dock}</td>
-                                <td className="py-4 text-right">
-                                  <div className="flex justify-end gap-2">
-                                    <button 
-                                      onClick={() => addNotification(lang === 'en' ? `Opening GPS Telemetry for ${truck.id}...` : `Abriendo Telemetría GPS para ${truck.id}...`, 'operational')}
-                                      className="p-2 hover:bg-porteo-blue/20 rounded-lg transition-colors text-porteo-blue"
-                                      title="GPS Telemetry"
-                                    >
-                                      <Activity className="w-4 h-4" />
-                                    </button>
-                                    <button 
-                                      onClick={() => {
-                                        setSelectedSubItem({ id: truck.id, ...truck, status: truck.status, truck: truck.id });
-                                        setActiveModal('dock-detail'); // Reuse dock-detail for truck settings/info
-                                      }}
-                                      className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/40"
-                                      title="Settings"
-                                    >
-                                      <Settings className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Yard Map / Visualization */}
-                    <div className="glass p-8 rounded-3xl relative overflow-hidden group">
-                      <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-2">
-                          <MapIcon className="w-5 h-5 text-porteo-orange" />
-                          <h4 className="text-white font-bold">Interactive Yard Map</h4>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                          <span className="text-[10px] text-white/40 uppercase font-bold">Live GPS Feed Active</span>
-                        </div>
-                      </div>
-                      
-                      <div className="relative h-64 bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
-                        {/* Simulated Grid/Map */}
-                        <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-                        
-                        {/* Docks Area */}
-                        <div className="absolute top-0 left-0 right-0 h-12 bg-white/5 border-b border-white/10 flex justify-around items-center px-4">
-                          {Array.from({ length: 10 }).map((_, i) => (
-                            <div key={i} className="w-6 h-8 border-x border-white/10 flex items-end justify-center pb-1">
-                              <span className="text-[6px] text-white/20">D{i+1}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Units on Map */}
-                        {filteredTrucks.map((truck, i) => {
-                          const isAtDock = truck.dock !== '-';
-                          const dockNum = isAtDock ? parseInt(truck.dock.replace('Dock ', '')) : 0;
-                          
-                          // Position logic
-                          let x, y;
-                          if (isAtDock) {
-                            // Position at the dock
-                            x = (dockNum - 1) * 10 + 5; // Percentage
-                            y = 15; // Percentage
-                          } else {
-                            // Position in the yard (randomized for visual variety)
-                            x = 20 + (i * 15) % 60;
-                            y = 50 + (i * 10) % 30;
-                          }
-
-                          return (
-                            <motion.div 
-                              key={truck.id}
-                              initial={{ x: `${x}%`, y: `${y}%` }}
-                              animate={truck.status === 'Waiting' ? { 
-                                x: [`${x}%`, `${x+2}%`, `${x}%`],
-                                y: [`${y}%`, `${y+1}%`, `${y}%`]
-                              } : { x: `${x}%`, y: `${y}%` }}
-                              transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
-                              className={`absolute w-4 h-6 rounded shadow-lg flex items-center justify-center transition-all ${truck.status === 'Unloading' ? 'bg-emerald-500 shadow-emerald-500/50' : truck.status === 'Waiting' ? 'bg-porteo-orange shadow-porteo-orange/50' : 'bg-porteo-blue shadow-porteo-blue/50'}`}
-                              style={{ left: 0, top: 0 }}
-                            >
-                              <Truck className="w-2 h-2 text-white" />
-                              <div className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900 text-[6px] px-1 rounded border border-white/10 text-white z-10">{truck.id}</div>
-                            </motion.div>
-                          );
-                        })}
-
-                        <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-                          <button onClick={() => addNotification('Recalibrating GPS Sensors...', 'operational')} className="p-2 bg-slate-900/80 border border-white/10 rounded-xl hover:bg-slate-800 transition-all">
-                            <RefreshCw className="w-3 h-3 text-white/40" />
-                          </button>
-                          <button onClick={() => addNotification('Switching to Satellite View...', 'operational')} className="p-2 bg-slate-900/80 border border-white/10 rounded-xl hover:bg-slate-800 transition-all">
-                            <Globe2 className="w-3 h-3 text-white/40" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-4 p-3 bg-porteo-blue/10 border border-porteo-blue/30 rounded-xl flex items-center gap-3">
-                        <Zap className="w-4 h-4 text-porteo-blue" />
-                        <p className="text-[10px] text-white/60">
-                          {lang === 'en' 
-                            ? `AI: ${trucks.filter(t => t.idling).length} units are currently idling in the yard for >20 mins. Recommend immediate dock assignment.`
-                            : `IA: ${trucks.filter(t => t.idling).length} unidades están inactivas en el patio por >20 min. Se recomienda asignación inmediata de muelle.`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-8">
-                    {/* Dock Status Mini-Grid */}
-                    <div className="glass p-6 rounded-3xl">
-                      <h3 className="text-lg font-bold text-white mb-6">Dock Occupancy</h3>
-                      <div className="grid grid-cols-3 gap-3">
-                        {Array.from({ length: 9 }).map((_, i) => {
-                          const dockLabel = `Dock ${i + 1}`;
-                          const occupyingTruck = trucks.find(t => t.dock === dockLabel);
-                          const isOccupied = !!occupyingTruck;
-                          return (
-                            <button 
-                              key={i} 
-                              onClick={() => {
-                                setSelectedSubItem({ 
-                                  id: `D-${i+1}`, 
-                                  status: isOccupied ? 'Occupied' : 'Available', 
-                                  truck: occupyingTruck ? occupyingTruck.id : null,
-                                  carrier: occupyingTruck ? occupyingTruck.carrier : null,
-                                  driver: occupyingTruck ? occupyingTruck.driver : null
-                                });
-                                setActiveModal('dock-detail');
-                              }}
-                              className={`p-3 rounded-xl border flex flex-col items-center gap-1 transition-all hover:scale-105 ${isOccupied ? 'bg-rose-500/10 border-rose-500/30 text-rose-500' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'}`}
-                            >
-                              <span className="text-[8px] font-bold uppercase">D-{i + 1}</span>
-                              <Truck className={`w-4 h-4 ${isOccupied ? 'animate-pulse' : ''}`} />
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setIsProcessing(true);
-                          setTimeout(() => {
-                            setIsProcessing(false);
-                            // Real logic: assign waiting trucks to available docks
-                            const updatedTrucks = [...trucks];
-                            const waitingTrucks = updatedTrucks.filter(t => t.status === 'Waiting');
-                            const occupiedDocks = updatedTrucks.filter(t => t.dock !== '-').map(t => t.dock);
-                            
-                            let dockIndex = 1;
-                            waitingTrucks.forEach(truck => {
-                              while (occupiedDocks.includes(`Dock ${dockIndex}`) && dockIndex <= 10) {
-                                dockIndex++;
-                              }
-                              if (dockIndex <= 10) {
-                                truck.dock = `Dock ${dockIndex}`;
-                                truck.status = 'In Yard';
-                                occupiedDocks.push(`Dock ${dockIndex}`);
-                              }
-                            });
-                            setTrucks(updatedTrucks);
-                            addNotification(lang === 'en' ? 'Dock allocation optimized based on priority and ETA.' : 'Asignación de muelles optimizada basada en prioridad y ETA.', 'operational');
-                          }, 2000);
-                        }}
-                        className="w-full mt-6 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
-                      >
-                        {isProcessing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-porteo-orange" />}
-                        {isProcessing ? (lang === 'en' ? 'Optimizing...' : 'Optimizando...') : (lang === 'en' ? 'Optimize Dock Allocation' : 'Optimizar Asignación de Muelles')}
-                      </button>
-                    </div>
-
-                    {/* Third Party Carrier Stats */}
-                    <div className="glass p-6 rounded-3xl">
-                      <h3 className="text-lg font-bold text-white mb-6">Carrier Performance</h3>
-                      <div className="space-y-4">
-                        {carriers.map((carrier, i) => (
-                          <div key={i} className="group p-3 bg-white/5 rounded-2xl border border-white/10 hover:border-porteo-orange/30 transition-all">
-                            <div className="flex items-center justify-between mb-2">
-                              <div>
-                                <p className="text-sm font-bold text-white">{carrier.name}</p>
-                                <p className="text-[10px] text-white/40">On-time delivery</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-bold text-emerald-500">{carrier.score}%</p>
-                                <p className="text-[10px] text-white/40">{carrier.trend}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                              <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded ${carrier.status === 'Late' ? 'bg-rose-500/20 text-rose-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                {carrier.status}
-                              </span>
-                              <div className="flex gap-2">
-                                <button 
-                                  onClick={() => addNotification(lang === 'en' ? `Calling ${carrier.name} Dispatch at ${carrier.phone}...` : `Llamando a Despacho de ${carrier.name} al ${carrier.phone}...`, 'operational')}
-                                  className="p-1.5 bg-porteo-orange/10 text-porteo-orange rounded-lg hover:bg-porteo-orange transition-all hover:text-white"
-                                >
-                                  <Activity className="w-3 h-3" />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    setSelectedCarrier(carrier);
-                                    addNotification(lang === 'en' ? `Opening full performance report for ${carrier.name}` : `Abriendo reporte de desempeño completo para ${carrier.name}`, 'operational');
-                                  }}
-                                  className="p-1.5 bg-white/5 text-white/40 rounded-lg hover:bg-white/10 transition-all hover:text-white"
-                                >
-                                  <FileText className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
             {activeTab === 'patio' && (
               <motion.div 
                 key="patio"
@@ -2319,29 +2490,226 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <PatioManagement lang={lang} searchQuery={searchQuery} trucks={trucks} />
+                {selectedWarehouse ? (
+                  <PatioManagement 
+                    lang={lang} 
+                    searchQuery={searchQuery} 
+                    trucks={trucks} 
+                    patioSlots={patioSlots}
+                    onAddSlot={(type) => {
+                      const newId = `new-${Date.now()}`;
+                      const prefix = type === 'parking' ? 'P' : type === 'dock' ? 'D' : 'S';
+                      const count = patioSlots.filter(s => s.type === type).length + 1;
+                      const newSlot: PatioSlot = {
+                        id: newId,
+                        label: `${prefix}-${count.toString().padStart(2, '0')}`,
+                        status: 'empty',
+                        type
+                      };
+                      setPatioSlots(prev => [...prev, newSlot]);
+                      addNotification(lang === 'en' ? `New ${type} slot added: ${newSlot.label}` : `Nuevo espacio de ${type} agregado: ${newSlot.label}`, 'success');
+                    }}
+                    onSlotClick={(slot) => {
+                      if (slot.truckId) {
+                        const truck = trucks.find(t => t.id === slot.truckId);
+                        if (truck) {
+                          setSelectedSubItem({ ...truck, slotLabel: slot.label, slotType: slot.type });
+                          setActiveModal('dock-detail');
+                        } else {
+                          // Fallback if truck not found in trucks list
+                          setSelectedSubItem({ 
+                            id: slot.truckId, 
+                            status: slot.status === 'occupied' ? 'Occupied' : 'Available',
+                            truck: slot.truckId,
+                            slotLabel: slot.label,
+                            slotType: slot.type,
+                            carrier: 'Unknown Carrier',
+                            driver: 'Unknown Driver'
+                          });
+                          setActiveModal('dock-detail');
+                        }
+                      } else {
+                        // Empty slot
+                        setSelectedSubItem({
+                          id: slot.label,
+                          status: 'Available',
+                          slotLabel: slot.label,
+                          slotType: slot.type,
+                          carrier: '-',
+                          driver: '-'
+                        });
+                        setActiveModal('dock-detail');
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <Truck className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse from the header or add a new one in the Admin panel to view patio management.' 
+                        : 'Por favor, seleccione un almacén del encabezado o agregue uno nuevo en el panel de Administración para ver la gestión de patio.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 
-            {activeTab === 'assembly' && selectedWarehouse && (
+            {activeTab === 'assembly' && (
               <motion.div 
                 key="assembly"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <AssemblyLine lang={lang} />
+                {selectedWarehouse ? (
+                  <AssemblyLine 
+                    lang={lang} 
+                    inventoryItems={inventoryItems}
+                    setInventoryItems={setInventoryItems}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <Layers className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse from the header or add a new one in the Admin panel to view assembly lines.' 
+                        : 'Por favor, seleccione un almacén del encabezado o agregue uno nuevo en el panel de Administración para ver las líneas de ensamblaje.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 
-            {activeTab === 'research' && selectedWarehouse && (
+            {activeTab === 'advanced-logistics' && (
+              <motion.div 
+                key="advanced-logistics"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="h-full"
+              >
+                {selectedWarehouse ? (
+                  <AdvancedLogistics 
+                    lang={lang} 
+                    warehouse={selectedWarehouse} 
+                    addNotification={addNotification} 
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <Zap className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse to view advanced logistics operations.' 
+                        : 'Por favor, seleccione un almacén para ver las operaciones logísticas avanzadas.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {activeTab === 'tpl-billing' && (
+              <motion.div 
+                key="tpl-billing"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="h-full"
+              >
+                {selectedWarehouse ? (
+                  <TPLBilling 
+                    lang={lang} 
+                    market={market}
+                    warehouse={selectedWarehouse} 
+                    addNotification={addNotification} 
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <DollarSign className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse to view 3PL billing management.' 
+                        : 'Por favor, seleccione un almacén para ver la gestión de facturación 3PL.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {activeTab === 'research' && (
               <motion.div 
                 key="research"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <StrategicResearch lang={lang} setActiveTab={setActiveTab} addNotification={addNotification} />
+                {selectedWarehouse ? (
+                  <StrategicResearch lang={lang} market={market} setActiveTab={setActiveTab} addNotification={addNotification} />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 h-full">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                      <BrainCircuit className="w-10 h-10 text-white/20" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {lang === 'en' ? 'No Warehouse Selected' : 'Ningún Almacén Seleccionado'}
+                    </h3>
+                    <p className="text-white/40 max-w-md mb-8">
+                      {lang === 'en' 
+                        ? 'Please select a warehouse from the header or add a new one in the Admin panel to view strategic research.' 
+                        : 'Por favor, seleccione un almacén del encabezado o agregue uno nuevo en el panel de Administración para ver la investigación estratégica.'}
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab('admin')}
+                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/90 transition-all"
+                    >
+                      {lang === 'en' ? 'Go to Admin' : 'Ir a Administración'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -2354,9 +2722,18 @@ export default function App() {
                 className="space-y-8"
               >
                 <div className="flex justify-between items-end">
-                  <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">{lang === 'en' ? 'System Administration' : 'Administración del Sistema'}</h2>
-                    <p className="text-white/40">{lang === 'en' ? 'Manage warehouse network, import data, and configure system settings.' : 'Gestione la red de almacenes, importe datos y configure los ajustes del sistema.'}</p>
+                  <div className="flex items-center gap-6">
+                    <button 
+                      onClick={() => setActiveTab(previousTab)}
+                      className="p-3 rounded-xl bg-white/5 border border-white/10 text-white hover:text-porteo-orange hover:border-porteo-orange/50 transition-all"
+                      title={lang === 'en' ? 'Back' : 'Volver'}
+                    >
+                      <ArrowRight className="w-5 h-5 rotate-180" />
+                    </button>
+                    <div>
+                      <h2 className="text-3xl font-bold text-white mb-2">{lang === 'en' ? 'System Administration' : 'Administración del Sistema'}</h2>
+                      <p className="text-white/40">{lang === 'en' ? 'Manage warehouse network, import data, and configure system settings.' : 'Gestione la red de almacenes, importe datos y configure los ajustes del sistema.'}</p>
+                    </div>
                   </div>
                   <div className="flex gap-4">
                     <button 
@@ -2432,7 +2809,7 @@ export default function App() {
                                 <WarehouseIcon className="w-5 h-5" />
                               </div>
                               <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${wh.status === 'optimal' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'}`}>
-                                {wh.status}
+                                {lang === 'en' ? wh.status : (wh.status === 'optimal' ? 'óptimo' : 'alerta')}
                               </span>
                             </div>
                             <h4 className="text-white font-bold">{wh.name}</h4>
@@ -2518,12 +2895,12 @@ export default function App() {
                             <p className="text-white/40 italic text-sm">{lang === 'en' ? 'Master data management for ' : 'Gestión de datos maestros para '}{editingWarehouse.name}</p>
                             <div className="grid grid-cols-2 gap-4">
                               <button className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all text-left">
-                                <p className="font-bold text-sm">SKU Registry</p>
-                                <p className="text-[10px] text-white/40">Manage product master data</p>
+                                <p className="font-bold text-sm">{lang === 'en' ? 'SKU Registry' : 'Registro de SKU'}</p>
+                                <p className="text-[10px] text-white/40">{lang === 'en' ? 'Manage product master data' : 'Gestionar datos maestros de productos'}</p>
                               </button>
                               <button className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all text-left">
-                                <p className="font-bold text-sm">Customer List</p>
-                                <p className="text-[10px] text-white/40">Manage 3PL clients</p>
+                                <p className="font-bold text-sm">{lang === 'en' ? 'Customer List' : 'Lista de Clientes'}</p>
+                                <p className="text-[10px] text-white/40">{lang === 'en' ? 'Manage 3PL clients' : 'Gestionar clientes 3PL'}</p>
                               </button>
                             </div>
                           </div>
@@ -3008,6 +3385,10 @@ export default function App() {
                      activeModal === 'import-mapping' ? (lang === 'en' ? 'Data Mapping & Preview' : 'Mapeo y Vista Previa de Datos') :
                      activeModal === 'contract-detail' ? (lang === 'en' ? 'Contract Details' : 'Detalles del Contrato') :
                      activeModal === 'new-contract' ? (lang === 'en' ? 'New Contract' : 'Nuevo Contrato') :
+                     activeModal === 'pricing-detail' ? (lang === 'en' ? 'Pricing Details' : 'Detalles de Precios') :
+                     activeModal === 'rebate-detail' ? (lang === 'en' ? 'Rebate Details' : 'Detalles de Rebate') :
+                     activeModal === 'carta-porte' ? (lang === 'en' ? 'Bill of Lading' : 'Carta Porte') :
+                     activeModal === 'immex-control' ? (lang === 'en' ? 'IMMEX Control' : 'Control IMMEX') :
                      activeModal?.replace(/-/g, ' ') || ''}
                 </h2>
               </div>
@@ -3442,15 +3823,21 @@ export default function App() {
 
                     <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-4">
                       <div className="flex justify-between">
-                        <span className="text-white/60">Current Stock</span>
+                        <span className="text-white/60">
+                          {lang === 'en' ? 'Current Stock' : 'Stock Actual'}
+                        </span>
                         <span className="text-white font-bold">{selectedInventoryItem.quantity} {selectedInventoryItem.unit}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-white/60">Location</span>
+                        <span className="text-white/60">
+                          {lang === 'en' ? 'Location' : 'Ubicación'}
+                        </span>
                         <span className="text-white font-bold">{selectedInventoryItem.location}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-white/60">Pallet ID</span>
+                        <span className="text-white/60">
+                          {lang === 'en' ? 'Pallet ID' : 'ID de Pallet'}
+                        </span>
                         <span className="text-white font-bold">{selectedInventoryItem.palletId}</span>
                       </div>
                     </div>
@@ -3461,7 +3848,9 @@ export default function App() {
                         <Cpu className="w-4 h-4 text-porteo-blue" />
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-porteo-blue uppercase tracking-widest mb-1">AI Recommendation</p>
+                        <p className="text-[10px] font-bold text-porteo-blue uppercase tracking-widest mb-1">
+                          {lang === 'en' ? 'AI Recommendation' : 'Recomendación de IA'}
+                        </p>
                         <p className="text-xs text-white/80 leading-relaxed">
                           {lang === 'en' 
                             ? "This SKU has high turnover. Consider moving it to Zone A (near Dock 2) to reduce picking time by 15%."
@@ -3472,16 +3861,92 @@ export default function App() {
 
                     <div className="flex gap-4">
                       <button 
-                        onClick={() => addNotification(lang === 'en' ? 'Opening Edit Mode...' : 'Abriendo Modo Edición...', 'operational')}
+                        onClick={() => setActiveModal('edit-item')}
                         className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
                       >
-                        Edit Item
+                        {lang === 'en' ? 'Edit Item' : 'Editar Artículo'}
                       </button>
                       <button 
                         onClick={() => setActiveModal('move-pallet')}
                         className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold"
                       >
                         Move Pallet
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {activeModal === 'edit-item' && selectedInventoryItem && (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-2xl font-bold text-white">
+                        {lang === 'en' ? 'Edit Item' : 'Editar Artículo'}
+                      </h3>
+                      <button onClick={() => setActiveModal('inventory-detail')} className="p-2 hover:bg-white/5 rounded-full transition-colors">
+                        <X className="w-6 h-6 text-white/40" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Quantity' : 'Cantidad'}</label>
+                          <input 
+                            type="number" 
+                            value={selectedInventoryItem.quantity}
+                            onChange={(e) => setSelectedInventoryItem({...selectedInventoryItem, quantity: parseInt(e.target.value)})}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-bold focus:border-porteo-orange/50 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Unit' : 'Unidad'}</label>
+                          <input 
+                            type="text" 
+                            value={selectedInventoryItem.unit}
+                            onChange={(e) => setSelectedInventoryItem({...selectedInventoryItem, unit: e.target.value})}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-bold focus:border-porteo-orange/50 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Location' : 'Ubicación'}</label>
+                        <input 
+                          type="text" 
+                          value={selectedInventoryItem.location}
+                          onChange={(e) => setSelectedInventoryItem({...selectedInventoryItem, location: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-bold focus:border-porteo-orange/50 outline-none transition-all"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Pallet ID' : 'ID de Pallet'}</label>
+                        <input 
+                          type="text" 
+                          value={selectedInventoryItem.palletId}
+                          onChange={(e) => setSelectedInventoryItem({...selectedInventoryItem, palletId: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-bold focus:border-porteo-orange/50 outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <button 
+                        onClick={() => setActiveModal('inventory-detail')}
+                        className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
+                      >
+                        {lang === 'en' ? 'Cancel' : 'Cancelar'}
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setInventoryItems(prev => prev.map(item => 
+                            item.id === selectedInventoryItem.id ? selectedInventoryItem : item
+                          ));
+                          addNotification(lang === 'en' ? 'Item updated successfully' : 'Artículo actualizado con éxito', 'success');
+                          setActiveModal('inventory-detail');
+                        }}
+                        className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold"
+                      >
+                        {lang === 'en' ? 'Save Changes' : 'Guardar Cambios'}
                       </button>
                     </div>
                   </div>
@@ -3661,7 +4126,8 @@ export default function App() {
                           status: 'Waiting',
                           dock: '-',
                           eta: gateEntryForm.appointmentTime || 'N/A',
-                          idling: false
+                          idling: false,
+                          warehouseId: selectedWarehouse?.id || 'wh-001'
                         };
                         setTrucks([newTruck, ...trucks]);
                         addNotification(lang === 'en' ? 'Truck registered and synchronized with TMS.' : 'Camión registrado y sincronizado con TMS.', 'operational');
@@ -4112,46 +4578,116 @@ export default function App() {
                 {activeModal === 'slotting-ai' && (
                   <div className="space-y-6">
                     <div className="p-6 bg-porteo-orange/10 border border-porteo-orange/30 rounded-3xl flex items-center gap-4">
-                      <Cpu className="w-10 h-10 text-porteo-orange" />
+                      <div className="p-3 bg-porteo-orange/20 rounded-2xl text-porteo-orange">
+                        <Cpu className="w-8 h-8" />
+                      </div>
                       <div>
                         <h3 className="text-xl font-bold text-white">Slotting AI</h3>
-                        <p className="text-sm text-white/60">Automated SKU placement</p>
+                        <p className="text-sm text-white/60">{lang === 'en' ? 'Automated SKU placement' : 'Ubicación automatizada de SKU'}</p>
                       </div>
                     </div>
-                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-3">
+
+                    <div className="p-5 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'AI Analysis' : 'Análisis IA'}</h4>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                          <span className="text-[10px] font-bold text-emerald-500 uppercase">Live Data</span>
+                        </div>
+                      </div>
+                      
                       {isSlottingLoading ? (
-                        <div className="flex items-center gap-3 py-4">
-                          <div className="w-4 h-4 border-2 border-porteo-orange border-t-transparent animate-spin rounded-full" />
-                          <p className="text-xs text-white/40 italic">SR Warehouse Director is analyzing inventory velocity...</p>
+                        <div className="flex flex-col items-center gap-4 py-8">
+                          <RefreshCw className="w-8 h-8 text-porteo-orange animate-spin" />
+                          <p className="text-sm text-white/40 italic">{lang === 'en' ? 'Analyzing inventory velocity...' : 'Analizando velocidad de inventario...'}</p>
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          <p className="text-sm text-white/80 leading-relaxed font-medium">
-                            {slottingAdvice || (lang === 'en' 
-                              ? "AI suggests relocating 12 high-velocity SKUs to Zone A to reduce picking travel time by 15%." 
-                              : "IA sugiere reubicar 12 SKUs de alta velocidad a la Zona A para reducir el tiempo de viaje de surtido en un 15%.")}
-                          </p>
-                          <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full bg-porteo-orange w-3/4" />
+                          <div className="p-4 bg-black/20 rounded-xl border border-white/5">
+                            <p className="text-sm text-white/80 leading-relaxed italic">
+                              {slottingAdvice || (lang === 'en' 
+                                ? "AI suggests relocating high-velocity SKUs to Zone A to reduce picking travel time." 
+                                : "IA sugiere reubicar SKUs de alta velocidad a la Zona A para reducir el tiempo de viaje.")}
+                            </p>
                           </div>
-                          <p className="text-[10px] text-white/40 uppercase">75% Optimization Score</p>
+
+                          {slottingSuggestions.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-[10px] font-bold text-white/40 uppercase">{lang === 'en' ? 'Proposed Relocations' : 'Reubicaciones Propuestas'}</h5>
+                              <div className="max-h-[200px] overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                                {slottingSuggestions.map((s, i) => (
+                                  <div key={i} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-bold text-white">{s.sku}</p>
+                                      <p className="text-[10px] text-white/40">{s.reason}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] text-white/40">{s.current}</span>
+                                      <ArrowRight className="w-3 h-3 text-porteo-orange" />
+                                      <span className="text-[10px] text-emerald-500 font-bold">{s.suggested}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-2">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] text-white/40 uppercase">{lang === 'en' ? 'Efficiency Gain' : 'Ganancia de Eficiencia'}</span>
+                              <span className="text-[10px] text-emerald-500 font-bold">+15%</span>
+                            </div>
+                            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                              <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: '75%' }}
+                                className="h-full bg-porteo-orange" 
+                              />
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
+
                     <button 
                       type="button"
-                      disabled={isProcessing}
+                      disabled={isProcessing || slottingSuggestions.length === 0}
                       onClick={() => {
                         setIsProcessing(true);
                         setTimeout(() => {
-                          console.log('Slotting strategy applied');
+                          // Actually apply the slotting strategy
+                          setInventoryItems(prev => prev.map(item => {
+                            const suggestion = slottingSuggestions.find(s => s.sku === item.sku);
+                            if (suggestion) {
+                              return { ...item, location: suggestion.suggested };
+                            }
+                            return item;
+                          }));
+                          
+                          addNotification(
+                            lang === 'en' 
+                              ? `Successfully relocated ${slottingSuggestions.length} SKUs to optimal zones.` 
+                              : `Se reubicaron con éxito ${slottingSuggestions.length} SKUs a zonas óptimas.`,
+                            'success'
+                          );
+                          
                           setIsProcessing(false);
                           setActiveModal(null);
                         }, 2000);
                       }}
-                      className="w-full py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/80 transition-all disabled:opacity-50"
+                      className="w-full py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-all disabled:opacity-50 shadow-lg shadow-porteo-orange/20 flex items-center justify-center gap-3"
                     >
-                      {isProcessing ? (lang === 'en' ? 'Applying Strategy...' : 'Aplicando Estrategia...') : (lang === 'en' ? 'Apply Slotting Strategy' : 'Aplicar Estrategia de Slotting')}
+                      {isProcessing ? (
+                        <>
+                          <RefreshCw className="w-5 h-5 animate-spin" />
+                          {lang === 'en' ? 'Applying Strategy...' : 'Aplicando Estrategia...'}
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-5 h-5" />
+                          {lang === 'en' ? 'Apply Slotting Strategy' : 'Aplicar Estrategia de Slotting'}
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
@@ -4541,19 +5077,15 @@ export default function App() {
                       <>
                         <div className="p-6 bg-rose-500/10 border border-rose-500/30 rounded-3xl">
                           <div className="flex justify-between items-center mb-4">
-                            <p className="text-sm text-white/80">Operational risk overview and asset protection status.</p>
+                            <p className="text-sm text-white/80">{lang === 'en' ? 'Operational risk overview and asset protection status.' : 'Resumen de riesgo operativo y estado de protección de activos.'}</p>
                             <div className="text-right">
-                              <p className="text-2xl font-bold text-rose-500">84/100</p>
-                              <p className="text-[10px] text-white/40 uppercase font-bold">Risk Score</p>
+                              <p className={`text-2xl font-bold ${riskScore < 70 ? 'text-rose-500' : riskScore < 85 ? 'text-porteo-orange' : 'text-emerald-500'}`}>{riskScore}/100</p>
+                              <p className="text-[10px] text-white/40 uppercase font-bold">{lang === 'en' ? 'Risk Score' : 'Puntaje de Riesgo'}</p>
                             </div>
                           </div>
                         </div>
                         <div className="space-y-4">
-                          {[
-                            { id: 'RSK-101', title: 'Unauthorized Access Attempt', severity: 'High', area: 'Main Gate', time: '14m ago' },
-                            { id: 'RSK-102', title: 'Temperature Variance', severity: 'Medium', area: 'Cold Storage B', time: '1h ago' },
-                            { id: 'RSK-103', title: 'Unscheduled Truck Arrival', severity: 'Low', area: 'Dock 7', time: '3h ago' }
-                          ].map((risk, i) => (
+                          {dynamicRisks.map((risk, i) => (
                             <div 
                               key={i} 
                               onClick={() => {
@@ -4821,19 +5353,24 @@ export default function App() {
                   <div className="space-y-6">
                     {modalLevel === 1 && (
                       <>
-                        <div className="p-6 bg-emerald-500/10 border border-emerald-500/30 rounded-3xl">
-                          <p className="text-sm text-white/80">Predictive analysis for cargo rotation and storage optimization.</p>
+                        <div className="p-6 bg-emerald-500/10 border border-emerald-500/30 rounded-3xl flex items-center gap-4">
+                          <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-500">
+                            <BarChart3 className="w-8 h-8" />
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-bold text-white">{lang === 'en' ? 'Predictive Analytics' : 'Analítica Predictiva'}</h3>
+                            <p className="text-sm text-white/60">{lang === 'en' ? 'Cargo rotation & storage optimization' : 'Rotación de carga y optimización'}</p>
+                          </div>
                         </div>
-                        <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                          <h4 className="text-xs font-bold text-white/40 uppercase mb-4">Projected Cargo Rotation</h4>
-                          <div className="h-40">
+                        
+                        <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
+                          <div className="flex items-center justify-between mb-6">
+                            <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Projected Cargo Rotation' : 'Rotación de Carga Proyectada'}</h4>
+                            <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">ML Model v4.2</span>
+                          </div>
+                          <div className="h-48">
                             <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={[
-                                { name: 'W1', value: 400 },
-                                { name: 'W2', value: 300 },
-                                { name: 'W3', value: 600 },
-                                { name: 'W4', value: 800 }
-                              ]}>
+                              <AreaChart data={projectedRotation}>
                                 <defs>
                                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -4841,6 +5378,8 @@ export default function App() {
                                   </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#ffffff40', fontSize: 10}} />
+                                <YAxis hide />
                                 <Tooltip 
                                   contentStyle={{ backgroundColor: '#121212', border: '1px solid #ffffff10', borderRadius: '12px' }}
                                   itemStyle={{ color: '#10b981', fontWeight: 'bold' }}
@@ -4850,35 +5389,36 @@ export default function App() {
                             </ResponsiveContainer>
                           </div>
                         </div>
+
                         <div className="grid grid-cols-2 gap-4">
                           <button 
                             onClick={() => setModalLevel(2)}
-                            className="py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold hover:bg-white/10"
+                            className="py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                           >
-                            Rotation Details
+                            <Layers className="w-4 h-4" />
+                            {lang === 'en' ? 'Rotation Details' : 'Detalles de Rotación'}
                           </button>
                           <button 
-                            onClick={() => exportReport('Rotation Analysis', { categories: [
-                              { category: 'Electronics', rotation: '12.4x', trend: '+2.1%', health: 'Optimal' },
-                              { category: 'Apparel', rotation: '8.2x', trend: '-0.5%', health: 'Slow' },
-                              { category: 'Perishables', rotation: '24.1x', trend: '+5.4%', health: 'Critical' }
-                            ]})}
-                            className="py-3 bg-emerald-500 text-white rounded-xl font-bold"
+                            onClick={() => exportReport('Rotation Analysis', { categories: predictiveData })}
+                            className="py-4 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
                           >
-                            Export Report
+                            <Download className="w-4 h-4" />
+                            {lang === 'en' ? 'Export Report' : 'Exportar Reporte'}
                           </button>
                         </div>
                       </>
                     )}
                     {modalLevel === 2 && (
                       <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                        <h4 className="text-lg font-bold text-white">Rotation by Category</h4>
-                        <div className="space-y-4">
-                          {[
-                            { category: 'Electronics', rotation: '12.4x', trend: '+2.1%', health: 'Optimal', details: 'High demand in US market, low stock in Mexico.' },
-                            { category: 'Apparel', rotation: '8.2x', trend: '-0.5%', health: 'Slow', details: 'Seasonal transition, high inventory in Zone B.' },
-                            { category: 'Perishables', rotation: '24.1x', trend: '+5.4%', health: 'Critical', details: 'Fast rotation required, priority unloading active.' }
-                          ].map((cat, i) => (
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => setModalLevel(1)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                            <ArrowRight className="w-5 h-5 text-white/40 rotate-180" />
+                          </button>
+                          <h4 className="text-lg font-bold text-white">{lang === 'en' ? 'Rotation by Category' : 'Rotación por Categoría'}</h4>
+                        </div>
+                        
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                          {predictiveData.map((cat, i) => (
                             <button 
                               key={i} 
                               onClick={() => {
@@ -4889,7 +5429,9 @@ export default function App() {
                             >
                               <div className="text-left">
                                 <p className="text-sm font-bold text-white group-hover:text-porteo-orange transition-colors">{cat.category}</p>
-                                <p className="text-[10px] text-white/40 uppercase tracking-widest">Trend: {cat.trend}</p>
+                                <p className={`text-[10px] font-bold uppercase tracking-widest ${parseFloat(cat.trend) > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                  Trend: {cat.trend}
+                                </p>
                               </div>
                               <div className="text-right">
                                 <p className="text-sm font-bold text-white">{cat.rotation}</p>
@@ -4900,61 +5442,45 @@ export default function App() {
                             </button>
                           ))}
                         </div>
-                        <button 
-                          onClick={() => setModalLevel(1)}
-                          className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold"
-                        >
-                          Back to Overview
-                        </button>
                       </div>
                     )}
                     {modalLevel === 3 && selectedCategory && (
                       <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl">
-                          <h4 className="text-xl font-bold text-white mb-2">{selectedCategory.category} Analysis</h4>
-                          <p className="text-sm text-white/60 leading-relaxed">
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => setModalLevel(2)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                            <ArrowRight className="w-5 h-5 text-white/40 rotate-180" />
+                          </button>
+                          <h4 className="text-lg font-bold text-white">{selectedCategory.category} {lang === 'en' ? 'Insights' : 'Insights'}</h4>
+                        </div>
+
+                        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl space-y-4">
+                          <div className="flex items-center gap-3 text-emerald-500">
+                            <Zap className="w-5 h-5" />
+                            <p className="text-sm font-bold uppercase tracking-widest">{lang === 'en' ? 'AI Recommendation' : 'Recomendación IA'}</p>
+                          </div>
+                          <p className="text-sm text-white/80 leading-relaxed">
                             {selectedCategory.details}
                           </p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="p-4 bg-black/20 rounded-2xl border border-white/5">
-                            <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Stock Level</p>
-                            <p className="text-lg font-bold text-white">4,200 units</p>
+                          <div className="pt-4 border-t border-white/5">
+                            <div className="flex justify-between text-[10px] text-white/40 uppercase mb-2">
+                              <span>{lang === 'en' ? 'Confidence Level' : 'Nivel de Confianza'}</span>
+                              <span>94%</span>
+                            </div>
+                            <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 w-[94%]" />
+                            </div>
                           </div>
-                          <div className="p-4 bg-black/20 rounded-2xl border border-white/5">
-                            <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Avg. Stay</p>
-                            <p className="text-lg font-bold text-white">3.2 days</p>
-                          </div>
                         </div>
-                        <div className="flex gap-4">
-                          <button 
-                            disabled={isProcessing}
-                            onClick={() => {
-                              setIsRebalancing(true);
-                              setTimeout(() => {
-                                setIsRebalancing(false);
-                                addNotification(lang === 'en' ? `Stock rebalancing strategy applied for ${selectedCategory.category}. 120 pallets scheduled for relocation.` : `Estrategia de rebalanceo de stock aplicada para ${selectedCategory.category}. 120 pallets programados para reubicación.`, 'operational');
-                                setModalLevel(1);
-                              }, 3000);
-                            }}
-                            className="flex-1 py-3 bg-porteo-orange text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-                          >
-                            {isProcessing ? (
-                              <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full" />
-                                {lang === 'en' ? 'Processing...' : 'Procesando...'}
-                              </>
-                            ) : (
-                              lang === 'en' ? 'Rebalance' : 'Rebalancear'
-                            )}
-                          </button>
-                          <button 
-                            onClick={() => setModalLevel(2)}
-                            className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold"
-                          >
-                            Back
-                          </button>
-                        </div>
+                        
+                        <button 
+                          onClick={() => {
+                            addNotification(lang === 'en' ? `Applied optimization strategy for ${selectedCategory.category}` : `Estrategia aplicada para ${selectedCategory.category}`, 'success');
+                            setActiveModal(null);
+                          }}
+                          className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold hover:bg-emerald-600 transition-all"
+                        >
+                          {lang === 'en' ? 'Apply Category Strategy' : 'Aplicar Estrategia de Categoría'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -5112,69 +5638,48 @@ export default function App() {
                           <p className="text-sm text-white/60 leading-relaxed mb-6">
                             {selectedTask.desc}
                           </p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="p-3 bg-black/20 rounded-xl border border-white/5">
-                              <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Projected Impact</p>
-                              <p className="text-lg font-bold text-emerald-500">{selectedTask.impact}</p>
-                            </div>
-                            <div className="p-3 bg-black/20 rounded-xl border border-white/5">
-                              <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Task ID</p>
-                              <p className="text-lg font-bold text-white">{selectedTask.id}</p>
-                            </div>
+                          <div className="p-4 bg-porteo-orange/5 rounded-2xl border border-porteo-orange/10 flex items-center gap-3">
+                            <Zap className="w-5 h-5 text-porteo-orange" />
+                            <p className="text-xs text-white/80 font-bold uppercase tracking-widest">Expected Impact: {selectedTask.impact}</p>
                           </div>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4">
+                        
+                        <div className="flex gap-4">
                           <button 
-                            onClick={() => {
-                              addNotification(lang === 'en' ? `Task ${selectedTask.id} Approved: ${selectedTask.task}` : `Tarea ${selectedTask.id} Aprobada: ${selectedTask.task}`, 'operational');
-                              setAiTasks(prev => prev.filter(t => t.id !== selectedTask.id));
-                              setModalLevel(1);
-                              setSelectedTask(null);
-                            }}
-                            className="py-3 bg-porteo-orange text-white rounded-xl font-bold hover:bg-porteo-orange/80 transition-all"
+                            onClick={() => setModalLevel(1)}
+                            className="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-bold hover:bg-white/10 transition-all"
                           >
-                            APPROVE
+                            {lang === 'en' ? 'Cancel' : 'Cancelar'}
                           </button>
                           <button 
                             onClick={() => {
-                              const reason = prompt('Reason for rejection:');
-                              if (reason) {
-                                addNotification('Task rejected and archived.', 'operational');
-                                setModalLevel(1);
-                              }
+                              setIsProcessing(true);
+                              setTimeout(() => {
+                                // Real effect based on task
+                                if (selectedTask.id === 'TASK-02') {
+                                  // Restock low items
+                                  setInventoryItems(prev => prev.map(item => 
+                                    item.quantity < 50 ? { ...item, quantity: item.quantity + 200 } : item
+                                  ));
+                                } else if (selectedTask.id === 'TASK-01') {
+                                  // Consolidate space
+                                  setWarehouses(prev => prev.map(w => 
+                                    w.id === selectedWarehouse?.id ? { ...w, currentOccupancy: w.currentOccupancy - 5 } : w
+                                  ));
+                                }
+                                
+                                setAiTasks(prev => prev.filter(t => t.id !== selectedTask.id));
+                                addNotification(lang === 'en' ? `Task "${selectedTask.task}" executed successfully.` : `Tarea "${selectedTask.task}" ejecutada con éxito.`, 'success');
+                                setIsProcessing(false);
+                                setActiveModal(null);
+                              }, 1500);
                             }}
-                            className="py-3 bg-rose-500/20 border border-rose-500/30 text-rose-500 rounded-xl font-bold hover:bg-rose-500/30 transition-all"
+                            className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-all shadow-lg shadow-porteo-orange/20 flex items-center justify-center gap-2"
                           >
-                            REJECT
-                          </button>
-                          <button 
-                            onClick={() => {
-                              addNotification('Task sent for secondary supervisor approval.', 'operational');
-                              setModalLevel(1);
-                            }}
-                            className="py-3 bg-porteo-blue/20 border border-porteo-blue/30 text-porteo-blue rounded-xl font-bold hover:bg-porteo-blue/30 transition-all"
-                          >
-                            ESCALATE
-                          </button>
-                          <button 
-                            onClick={() => {
-                              const newVal = prompt('Edit task parameters:', selectedTask.task);
-                              if (newVal) {
-                                addNotification('Task parameters updated. Re-calculating impact...', 'operational');
-                              }
-                            }}
-                            className="py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all"
-                          >
-                            EDIT
+                            {isProcessing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            {lang === 'en' ? 'Approve & Execute' : 'Aprobar y Ejecutar'}
                           </button>
                         </div>
-                        <button 
-                          onClick={() => setModalLevel(1)}
-                          className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-white/40 font-bold uppercase text-[10px] tracking-widest"
-                        >
-                          Cancel
-                        </button>
                       </div>
                     )}
                   </div>
@@ -5674,77 +6179,134 @@ export default function App() {
                 )}
                 {activeModal === 'dock-detail' && selectedSubItem && (
                   <div className="space-y-6">
-                    <div className={`p-6 rounded-3xl border flex items-center justify-between ${selectedSubItem.status === 'Occupied' ? 'bg-rose-500/10 border-rose-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
+                    <div className={`p-6 rounded-3xl border flex items-center justify-between ${selectedSubItem.status === 'Occupied' || selectedSubItem.status === 'Unloading' || selectedSubItem.status === 'In Yard' ? 'bg-rose-500/10 border-rose-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
                       <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-2xl ${selectedSubItem.status === 'Occupied' ? 'bg-rose-500/20' : 'bg-emerald-500/20'}`}>
-                          <Truck className={`w-8 h-8 ${selectedSubItem.status === 'Occupied' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                        <div className={`p-3 rounded-2xl ${selectedSubItem.status === 'Occupied' || selectedSubItem.status === 'Unloading' || selectedSubItem.status === 'In Yard' ? 'bg-rose-500/20' : 'bg-emerald-500/20'}`}>
+                          {selectedSubItem.slotType === 'parking' ? (
+                            <ParkingCircle className={`w-8 h-8 ${selectedSubItem.status === 'Occupied' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                          ) : selectedSubItem.slotType === 'staging' ? (
+                            <MapPin className={`w-8 h-8 ${selectedSubItem.status === 'Occupied' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                          ) : (
+                            <Truck className={`w-8 h-8 ${selectedSubItem.status === 'Occupied' || selectedSubItem.status === 'Unloading' || selectedSubItem.status === 'In Yard' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                          )}
                         </div>
                         <div>
-                          <h3 className="text-xl font-bold text-white">{selectedSubItem.id}</h3>
-                          <p className={`text-sm font-bold ${selectedSubItem.status === 'Occupied' ? 'text-rose-500' : 'text-emerald-500'}`}>{selectedSubItem.status}</p>
+                          <h3 className="text-xl font-bold text-white">
+                            {selectedSubItem.slotType === 'parking' ? (lang === 'en' ? `Parking ${selectedSubItem.id}` : `Cajón ${selectedSubItem.id}`) :
+                             selectedSubItem.slotType === 'staging' ? (lang === 'en' ? `Staging ${selectedSubItem.id}` : `Staging ${selectedSubItem.id}`) :
+                             (lang === 'en' ? `Dock ${selectedSubItem.id}` : `Muelle ${selectedSubItem.id}`)}
+                          </h3>
+                          <p className={`text-sm font-bold ${selectedSubItem.status === 'Occupied' || selectedSubItem.status === 'Unloading' || selectedSubItem.status === 'In Yard' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                            {lang === 'en' ? selectedSubItem.status : (
+                              selectedSubItem.status === 'Occupied' ? 'Ocupado' :
+                              selectedSubItem.status === 'Unloading' ? 'Descargando' :
+                              selectedSubItem.status === 'In Yard' ? 'En Patio' :
+                              selectedSubItem.status === 'Waiting' ? 'Esperando' : 'Disponible'
+                            )}
+                          </p>
                         </div>
                       </div>
-                      {selectedSubItem.status === 'Occupied' && (
+                      {(selectedSubItem.status === 'Occupied' || selectedSubItem.status === 'Unloading' || selectedSubItem.status === 'In Yard') && (
                         <div className="text-right">
-                          <p className="text-[10px] text-white/40 uppercase font-bold">Current Unit</p>
-                          <p className="text-lg font-bold text-white">{selectedSubItem.truck}</p>
+                          <p className="text-[10px] text-white/40 uppercase font-bold">{lang === 'en' ? 'Current Unit' : 'Unidad Actual'}</p>
+                          <p className="text-lg font-bold text-white">{selectedSubItem.truck || selectedSubItem.id}</p>
                         </div>
                       )}
                     </div>
 
-                    {selectedSubItem.status === 'Occupied' ? (
+                    {(selectedSubItem.status === 'Occupied' || selectedSubItem.status === 'Unloading' || selectedSubItem.status === 'In Yard') ? (
                       <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                            <p className="text-[10px] text-white/40 uppercase mb-1 font-bold">Carrier</p>
+                            <p className="text-[10px] text-white/40 uppercase mb-1 font-bold">{lang === 'en' ? 'Carrier' : 'Transportista'}</p>
                             <p className="text-sm font-bold text-white">{selectedSubItem.carrier}</p>
                           </div>
                           <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                            <p className="text-[10px] text-white/40 uppercase mb-1 font-bold">Driver</p>
+                            <p className="text-[10px] text-white/40 uppercase mb-1 font-bold">{lang === 'en' ? 'Driver' : 'Chofer'}</p>
                             <p className="text-sm font-bold text-white">{selectedSubItem.driver}</p>
                           </div>
                         </div>
                         <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                          <h4 className="text-xs font-bold text-white/40 uppercase mb-3 tracking-widest">Dock Actions</h4>
+                          <h4 className="text-xs font-bold text-white/40 uppercase mb-3 tracking-widest">
+                            {selectedSubItem.slotType === 'dock' ? (lang === 'en' ? 'Dock Actions' : 'Acciones de Muelle') :
+                             selectedSubItem.slotType === 'parking' ? (lang === 'en' ? 'Parking Actions' : 'Acciones de Cajón') :
+                             (lang === 'en' ? 'Staging Actions' : 'Acciones de Staging')}
+                          </h4>
                           <div className="grid grid-cols-2 gap-3">
-                            <button 
-                              onClick={() => {
-                                const updatedTrucks = trucks.map(t => t.id === selectedSubItem.truck ? { ...t, status: 'Unloading' } : t);
-                                setTrucks(updatedTrucks);
-                                addNotification(lang === 'en' ? 'Unloading process started.' : 'Proceso de descarga iniciado.', 'operational');
-                                setActiveModal(null);
-                              }}
-                              className="py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all"
-                            >
-                              Start Unloading
-                            </button>
-                            <button 
-                              onClick={() => {
-                                const updatedTrucks = trucks.map(t => t.id === selectedSubItem.truck ? { ...t, status: 'Waiting', dock: '-' } : t);
-                                setTrucks(updatedTrucks);
-                                addNotification(lang === 'en' ? 'Truck moved back to yard.' : 'Camión movido de vuelta al patio.', 'operational');
-                                setActiveModal(null);
-                              }}
-                              className="py-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
-                            >
-                              Release Dock
-                            </button>
+                            {selectedSubItem.slotType === 'dock' ? (
+                              <>
+                                <button 
+                                  onClick={() => {
+                                    const truckId = selectedSubItem.truck || selectedSubItem.id;
+                                    const updatedTrucks = trucks.map(t => t.id === truckId ? { ...t, status: 'Unloading' } : t);
+                                    setTrucks(updatedTrucks);
+                                    setPatioSlots(prev => prev.map(s => s.label === selectedSubItem.slotLabel ? { ...s, status: 'occupied' } : s));
+                                    addNotification(lang === 'en' ? 'Unloading process started.' : 'Proceso de descarga iniciado.', 'success');
+                                    setActiveModal(null);
+                                  }}
+                                  className="py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all"
+                                >
+                                  {lang === 'en' ? 'Start Unloading' : 'Iniciar Descarga'}
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    const truckId = selectedSubItem.truck || selectedSubItem.id;
+                                    const updatedTrucks = trucks.map(t => t.id === truckId ? { ...t, status: 'Waiting', dock: '-' } : t);
+                                    setTrucks(updatedTrucks);
+                                    setPatioSlots(prev => prev.map(s => s.label === selectedSubItem.slotLabel ? { ...s, status: 'empty', truckId: undefined } : s));
+                                    addNotification(lang === 'en' ? 'Truck moved back to yard.' : 'Camión movido de vuelta al patio.', 'operational');
+                                    setActiveModal(null);
+                                  }}
+                                  className="py-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+                                >
+                                  {lang === 'en' ? 'Release Dock' : 'Liberar Muelle'}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button 
+                                  onClick={() => {
+                                    addNotification(lang === 'en' ? 'Movement request registered.' : 'Solicitud de movimiento registrada.', 'operational');
+                                    setActiveModal(null);
+                                  }}
+                                  className="py-3 bg-porteo-blue text-white rounded-xl text-xs font-bold hover:bg-porteo-blue/80 transition-all"
+                                >
+                                  {lang === 'en' ? 'Request Move' : 'Solicitar Movimiento'}
+                                </button>
+                                <button 
+                                  onClick={() => setActiveModal(null)}
+                                  className="py-3 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+                                >
+                                  {lang === 'en' ? 'View History' : 'Ver Historial'}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className="p-12 bg-white/5 rounded-3xl border border-white/10 border-dashed flex flex-col items-center justify-center text-center">
                         <Zap className="w-12 h-12 text-white/10 mb-4" />
-                        <p className="text-white/40 text-sm">Dock is currently available for assignment.</p>
+                        <p className="text-white/40 text-sm">
+                          {selectedSubItem.slotType === 'dock' ? (lang === 'en' ? 'Dock is currently available for assignment.' : 'El muelle está actualmente disponible para asignación.') :
+                           selectedSubItem.slotType === 'parking' ? (lang === 'en' ? 'Parking slot is available.' : 'El cajón de estacionamiento está disponible.') :
+                           (lang === 'en' ? 'Staging area is clear.' : 'El área de staging está despejada.')}
+                        </p>
                         <button 
                           onClick={() => {
-                            setActiveModal(null);
-                            setTruckStatusFilter('Waiting');
-                            addNotification(lang === 'en' ? 'Please select a waiting truck from the list to assign.' : 'Por favor seleccione un camión en espera de la lista para asignar.', 'alert');
+                            if (selectedSubItem.slotType === 'dock') {
+                              setTruckStatusFilter('Waiting');
+                              addNotification(lang === 'en' ? 'Please select a waiting truck from the list to assign.' : 'Por favor seleccione un camión en espera de la lista para asignar.', 'alert');
+                              setActiveModal(null);
+                            } else {
+                              setPatioSlots(prev => prev.map(s => s.label === selectedSubItem.slotLabel ? { ...s, status: 'reserved' } : s));
+                              addNotification(lang === 'en' ? 'Assignment mode activated. Space reserved.' : 'Modo de asignación activado. Espacio reservado.', 'success');
+                              setActiveModal(null);
+                            }
                           }}
                           className="mt-6 px-6 py-3 bg-porteo-orange text-white rounded-xl text-xs font-bold hover:bg-porteo-orange/80 transition-all"
                         >
-                          Assign Waiting Truck
+                          {selectedSubItem.slotType === 'dock' ? (lang === 'en' ? 'Assign Truck' : 'Asignar Camión') : (lang === 'en' ? 'Reserve Slot' : 'Reservar Espacio')}
                         </button>
                       </div>
                     )}
@@ -6041,12 +6603,24 @@ export default function App() {
                     </div>
 
                     <div className="flex gap-4 pt-4">
-                      <button className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2">
+                      <button 
+                        onClick={() => {
+                          if (selectedContract.documentUrl) {
+                            window.open(selectedContract.documentUrl, '_blank');
+                          } else {
+                            alert(lang === 'en' ? 'Full document not available for this contract.' : 'Documento completo no disponible para este contrato.');
+                          }
+                        }}
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2"
+                      >
                         <FileText className="w-5 h-5" />
-                        View Full Document
+                        {lang === 'en' ? 'View Full Document' : 'Ver Documento Completo'}
                       </button>
-                      <button className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all">
-                        Edit Contract
+                      <button 
+                        onClick={() => alert(lang === 'en' ? 'Edit mode coming soon' : 'Modo de edición próximamente')}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                      >
+                        {lang === 'en' ? 'Edit Contract' : 'Editar Contrato'}
                       </button>
                     </div>
                   </div>
@@ -6089,6 +6663,28 @@ export default function App() {
                       </div>
                     </div>
                     
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Upload Document</label>
+                      <label className="w-full border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 hover:border-porteo-orange/30 transition-all cursor-pointer group">
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              addNotification(lang === 'en' ? `Document ${e.target.files[0].name} uploaded successfully.` : `Documento ${e.target.files[0].name} subido con éxito.`, 'success');
+                            }
+                          }}
+                        />
+                        <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center text-white/20 group-hover:text-porteo-orange transition-colors">
+                          <Upload className="w-6 h-6" />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-bold text-white">{lang === 'en' ? 'Click or drag to upload' : 'Haz clic o arrastra para subir'}</p>
+                          <p className="text-xs text-white/40 mt-1">PDF, DOCX, JPG (Max 10MB)</p>
+                        </div>
+                      </label>
+                    </div>
+
                     <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
                       <input type="checkbox" className="w-4 h-4 rounded border-white/10 bg-white/5 text-porteo-orange focus:ring-porteo-orange" />
                       <label className="text-sm text-white/60">Enable Auto-Renewal</label>
@@ -6110,6 +6706,262 @@ export default function App() {
                       >
                         Cancel
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeModal === 'pricing-detail' && selectedPricing && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <div>
+                        <p className="text-xs text-white/40 uppercase font-bold">{lang === 'en' ? 'Customer' : 'Cliente'}</p>
+                        <p className="text-xl font-bold text-white">{selectedPricing.customerId}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-white/40 uppercase font-bold">{lang === 'en' ? 'Contract ID' : 'ID de Contrato'}</p>
+                        <p className="font-mono text-porteo-orange">{selectedPricing.contractId}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <p className="text-xs text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'SKU' : 'SKU'}</p>
+                        <p className="text-lg font-bold text-white">{selectedPricing.sku}</p>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <p className="text-xs text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Discount' : 'Descuento'}</p>
+                        <p className="text-lg font-bold text-emerald-500">-{((1 - selectedPricing.discountedPrice/selectedPricing.basePrice) * 100).toFixed(0)}%</p>
+                      </div>
+                    </div>
+
+                    <div className="p-6 bg-porteo-orange/10 rounded-2xl border border-porteo-orange/20">
+                      <div className="flex justify-between items-center mb-4">
+                        <span className="text-white/60">{lang === 'en' ? 'Base Price' : 'Precio Base'}</span>
+                        <span className="text-white line-through">${selectedPricing.basePrice.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-4 border-t border-white/10">
+                        <span className="text-lg font-bold text-white">{lang === 'en' ? 'Contract Price' : 'Precio de Contrato'}</span>
+                        {isEditingPricing ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-xl">$</span>
+                            <input 
+                              type="number" 
+                              defaultValue={selectedPricing.discountedPrice}
+                              className="w-24 bg-white/10 border border-porteo-orange/50 rounded-lg px-2 py-1 text-white text-xl font-bold outline-none"
+                              autoFocus
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-2xl font-bold text-porteo-orange">${selectedPricing.discountedPrice.toFixed(2)}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {showPricingHistory && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-3 overflow-hidden"
+                      >
+                        <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Price History' : 'Historial de Precios'}</h4>
+                        <div className="space-y-2">
+                          {pricingHistory.map((h, i) => (
+                            <div key={i} className="flex justify-between items-center text-sm">
+                              <div className="flex flex-col">
+                                <span className="text-white font-medium">${h.price.toFixed(2)}</span>
+                                <span className="text-[10px] text-white/40">{h.reason}</span>
+                              </div>
+                              <span className="text-[10px] text-white/40 font-mono">{h.date}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => {
+                          if (isEditingPricing) {
+                            addNotification(lang === 'en' ? 'Pricing updated successfully' : 'Precio actualizado con éxito', 'success');
+                            setIsEditingPricing(false);
+                          } else {
+                            setIsEditingPricing(true);
+                            setShowPricingHistory(false);
+                          }
+                        }}
+                        className={`flex-1 py-3 font-bold rounded-xl transition-colors ${
+                          isEditingPricing 
+                            ? 'bg-porteo-orange text-white' 
+                            : 'bg-porteo-orange/20 border border-porteo-orange/30 text-porteo-orange hover:bg-porteo-orange/30'
+                        }`}
+                      >
+                        {isEditingPricing 
+                          ? (lang === 'en' ? 'Save Changes' : 'Guardar Cambios') 
+                          : (lang === 'en' ? 'Edit Pricing' : 'Editar Precios')}
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setShowPricingHistory(!showPricingHistory);
+                          setIsEditingPricing(false);
+                        }}
+                        className={`flex-1 py-3 border font-bold rounded-xl transition-colors ${
+                          showPricingHistory
+                            ? 'bg-white/20 border-white/40 text-white'
+                            : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {showPricingHistory 
+                          ? (lang === 'en' ? 'Hide History' : 'Ocultar Historial') 
+                          : (lang === 'en' ? 'View History' : 'Ver Historial')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeModal === 'rebate-detail' && selectedRebate && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <div>
+                        <p className="text-xs text-white/40 uppercase font-bold">{lang === 'en' ? 'Supplier' : 'Proveedor'}</p>
+                        <p className="text-xl font-bold text-white">{selectedRebate.supplierName}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-white/40 uppercase font-bold">{lang === 'en' ? 'Rebate %' : '% de Rebate'}</p>
+                        <p className="text-xl font-bold text-emerald-500">{selectedRebate.rebatePercentage}%</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <p className="text-xs text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Target' : 'Meta'}</p>
+                        <p className="text-lg font-bold text-white">${selectedRebate.targetVolume.toLocaleString()}</p>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <p className="text-xs text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Current' : 'Actual'}</p>
+                        <p className="text-lg font-bold text-white">${selectedRebate.currentVolume.toLocaleString()}</p>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <p className="text-xs text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Progress' : 'Progreso'}</p>
+                        <p className="text-lg font-bold text-porteo-orange">
+                          {((selectedRebate.currentVolume / selectedRebate.targetVolume) * 100).toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-6 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-center">
+                      <p className="text-sm text-white/60 mb-1">{lang === 'en' ? 'Estimated Accrued Credit' : 'Crédito Acumulado Estimado'}</p>
+                      <p className="text-4xl font-bold text-emerald-500">
+                        ${(selectedRebate.currentVolume * (selectedRebate.rebatePercentage / 100)).toLocaleString()}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-porteo-orange transition-all duration-1000"
+                          style={{ width: `${Math.min(100, (selectedRebate.currentVolume / selectedRebate.targetVolume) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-center text-xs text-white/40">
+                        {lang === 'en' 
+                          ? `Remaining to target: $${(selectedRebate.targetVolume - selectedRebate.currentVolume).toLocaleString()}`
+                          : `Restante para la meta: $${(selectedRebate.targetVolume - selectedRebate.currentVolume).toLocaleString()}`}
+                      </p>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        exportReport(`Rebate-Report-${selectedRebate.supplierName}`, selectedRebate);
+                      }}
+                      className="w-full py-3 bg-white/5 border border-white/10 text-white font-bold rounded-xl hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      {lang === 'en' ? 'Download Rebate Report' : 'Descargar Reporte de Rebates'}
+                    </button>
+                  </div>
+                )}
+
+                {activeModal === 'carta-porte' && (
+                  <div className="space-y-6">
+                    <div className="p-6 bg-white/5 rounded-3xl border border-white/10">
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h4 className="text-xl font-bold text-white">{lang === 'en' ? 'Generate Carta Porte' : 'Generar Carta Porte'}</h4>
+                          <p className="text-sm text-white/40">{lang === 'en' ? 'CFDI 4.0 Compliance with Complemento Carta Porte v3.0' : 'Cumplimiento CFDI 4.0 con Complemento Carta Porte v3.0'}</p>
+                        </div>
+                        <div className="p-3 bg-porteo-orange/20 rounded-2xl text-porteo-orange">
+                          <FileText className="w-6 h-6" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Folio Number' : 'Número de Folio'}</p>
+                          <p className="text-lg font-bold text-white">CP-2024-0042</p>
+                        </div>
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Status' : 'Estatus'}</p>
+                          <span className="px-2 py-0.5 bg-porteo-orange/20 text-porteo-orange rounded text-[10px] font-bold uppercase">
+                            {lang === 'en' ? 'Draft' : 'Borrador'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <button 
+                          onClick={() => addNotification(lang === 'en' ? 'Generating and Stamping CFDI...' : 'Generando y Timbrando CFDI...', 'operational')}
+                          className="w-full py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2"
+                        >
+                          <ShieldCheck className="w-5 h-5" />
+                          {lang === 'en' ? 'Generate & Stamp CFDI' : 'Generar y Timbrar CFDI'}
+                        </button>
+                        <button className="w-full py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all">
+                          {lang === 'en' ? 'Preview PDF' : 'Vista Previa PDF'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeModal === 'immex-control' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Temporary' : 'Temporal'}</p>
+                        <p className="text-2xl font-bold text-white">1,240</p>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Expired' : 'Vencido'}</p>
+                        <p className="text-2xl font-bold text-rose-500">12</p>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'To Expire' : 'Por Vencer'}</p>
+                        <p className="text-2xl font-bold text-porteo-orange">45</p>
+                      </div>
+                    </div>
+
+                    <div className="p-6 bg-white/5 rounded-3xl border border-white/10">
+                      <h4 className="text-lg font-bold text-white mb-4">{lang === 'en' ? 'Anexo 24 Compliance' : 'Cumplimiento Anexo 24'}</h4>
+                      <div className="space-y-3">
+                        <button className="w-full p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all flex items-center justify-between group">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-porteo-blue/20 rounded-lg text-porteo-blue">
+                              <Download className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm text-white/80">{lang === 'en' ? 'Download Pedimento Details' : 'Descargar Detalle de Pedimentos'}</span>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-white/20 group-hover:text-porteo-blue transition-all" />
+                        </button>
+                        <button className="w-full p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all flex items-center justify-between group">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-porteo-orange/20 rounded-lg text-porteo-orange">
+                              <RefreshCw className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm text-white/80">{lang === 'en' ? 'Sync with SAT Portal' : 'Sincronizar con Portal SAT'}</span>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-white/20 group-hover:text-porteo-orange transition-all" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -6191,7 +7043,7 @@ export default function App() {
       <NotificationCenter 
         isOpen={isNotificationsOpen} 
         onClose={() => setIsNotificationsOpen(false)} 
-        language={lang} 
+        lang={lang} 
         notifications={notifications}
         onAction={(action) => {
           if (action.includes('Strategy')) {
@@ -6215,8 +7067,39 @@ export default function App() {
         addNotification={addNotification}
       />
 
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            className="fixed bottom-10 left-1/2 z-[500] glass px-6 py-4 rounded-2xl border border-white/10 flex items-center gap-4 shadow-2xl min-w-[320px]"
+          >
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+              toast.type === 'alert' ? 'bg-rose-500/20 text-rose-500' :
+              toast.type === 'success' ? 'bg-emerald-500/20 text-emerald-500' :
+              'bg-porteo-orange/20 text-porteo-orange'
+            }`}>
+              {toast.type === 'alert' ? <AlertCircle className="w-5 h-5" /> :
+               toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> :
+               <Bell className="w-5 h-5" />}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-white">{toast.message}</p>
+              <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                {lang === 'en' ? 'System Notification' : 'Notificación del Sistema'}
+              </p>
+            </div>
+            <button onClick={() => setToast(null)} className="text-white/20 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* AI Assistants Floating Interface - Refactored to avoid blocking UI */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
+      <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-3 pointer-events-none">
         <AnimatePresence>
           {isAiHubOpen && (
             <motion.div 
@@ -6225,8 +7108,8 @@ export default function App() {
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               className="pointer-events-auto flex flex-col items-end gap-3 mb-2"
             >
-              <AIAssistant role="Control Tower" language={lang} context={`Current Warehouse: ${selectedWarehouse?.name || 'None'}, Occupancy: ${selectedWarehouse?.currentOccupancy || 0}/${selectedWarehouse?.capacity || 0}, Status: ${selectedWarehouse?.status || 'N/A'}`} />
-              <AIAssistant role="Warehouse Director" language={lang} context={`Warehouse: ${selectedWarehouse?.name || 'None'}, Layout: ${selectedWarehouse?.layout?.racks?.rows || 0}x${selectedWarehouse?.layout?.racks?.cols || 0}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
+              <AIAssistant role="Control Tower" lang={lang} context={`Current Warehouse: ${selectedWarehouse?.name || 'None'}, Occupancy: ${selectedWarehouse?.currentOccupancy || 0}/${selectedWarehouse?.capacity || 0}, Status: ${selectedWarehouse?.status || 'N/A'}`} />
+              <AIAssistant role="Warehouse Director" lang={lang} context={`Warehouse: ${selectedWarehouse?.name || 'None'}, Layout: ${selectedWarehouse?.layout?.racks?.rows || 0}x${selectedWarehouse?.layout?.racks?.cols || 0}, Inventory: ${inventoryItems.length} items`} onFileUpload={(file) => {
                 if (selectedWarehouse) {
                   setIsProcessing(true);
                   addNotification(lang === 'en' ? `AI Director is analyzing ${file.name}...` : `El Director de IA está analizando ${file.name}...`, 'operational');
@@ -6247,8 +7130,8 @@ export default function App() {
                   }, 3000);
                 }
               }} />
-              <AIAssistant role="Supply Chain Director" language={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
-              <AIAssistant role="COO Assistant" language={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />
+              <AIAssistant role="Supply Chain Director" lang={lang} context={`Network: USA & Mexico, Total Warehouses: 3, Market Focus: ${market}`} />
+              <AIAssistant role="COO Assistant" lang={lang} context={`Financials: Revenue trending up, Cost per pallet: $4.20, Labor efficiency: 91%`} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -8,7 +8,8 @@ import {
   Clock, 
   AlertCircle,
   CheckCircle2,
-  MapPin
+  MapPin,
+  Plus
 } from 'lucide-react';
 import { PatioSlot } from '../types';
 import { MOCK_PATIO } from '../constants';
@@ -17,15 +18,24 @@ interface PatioManagementProps {
   lang: 'en' | 'es';
   searchQuery?: string;
   trucks?: any[];
+  patioSlots: PatioSlot[];
+  onSlotClick?: (slot: PatioSlot) => void;
+  onAddSlot?: (type: 'parking' | 'dock' | 'staging') => void;
 }
 
-export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQuery = '', trucks = [] }) => {
+export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQuery = '', trucks = [], patioSlots, onSlotClick, onAddSlot }) => {
   const t = {
     title: lang === 'en' ? 'Patio & Yard Management' : 'Gestión de Patio y Patio',
     parking: lang === 'en' ? 'Parking Slots' : 'Cajones de Estacionamiento',
     docks: lang === 'en' ? 'Loading Docks' : 'Muelles de Carga',
     staging: lang === 'en' ? 'Staging Areas' : 'Áreas de Staging',
-    status: lang === 'en' ? 'Status' : 'Estatus'
+    status: lang === 'en' ? 'Status' : 'Estado',
+    empty: lang === 'en' ? 'Empty' : 'Vacío',
+    occupied: lang === 'en' ? 'Occupied' : 'Ocupado',
+    reserved: lang === 'en' ? 'Reserved' : 'Reservado',
+    shipment: lang === 'en' ? 'Shipment' : 'Embarque',
+    complete: lang === 'en' ? 'Complete' : 'Completado',
+    add: lang === 'en' ? 'Add' : 'Agregar'
   };
 
   const getStatusColor = (status: PatioSlot['status']) => {
@@ -37,8 +47,8 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
     }
   };
 
-  // Merge mock patio with real trucks if they have dock assignments
-  const patioWithTrucks = MOCK_PATIO.map(slot => {
+  // Merge patioSlots with real trucks if they have dock assignments
+  const patioWithTrucks = patioSlots.map(slot => {
     const truckAtSlot = trucks.find(t => t.dock === slot.label || t.id === slot.truckId);
     if (truckAtSlot) {
       return {
@@ -65,11 +75,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
         <div className="flex gap-4">
           <div className="glass px-6 py-3 rounded-2xl border border-white/10 flex items-center gap-3">
             <div className="w-3 h-3 rounded-full bg-emerald-500" />
-            <span className="text-sm text-white/60">{lang === 'en' ? 'Available' : 'Disponible'}: 12</span>
+            <span className="text-sm text-white/60">{lang === 'en' ? 'Available' : 'Disponible'}: {patioWithTrucks.filter(s => s.status === 'empty').length}</span>
           </div>
           <div className="glass px-6 py-3 rounded-2xl border border-white/10 flex items-center gap-3">
             <div className="w-3 h-3 rounded-full bg-porteo-orange" />
-            <span className="text-sm text-white/60">{lang === 'en' ? 'Occupied' : 'Ocupado'}: 8</span>
+            <span className="text-sm text-white/60">{lang === 'en' ? 'Occupied' : 'Ocupado'}: {patioWithTrucks.filter(s => s.status === 'occupied').length}</span>
           </div>
         </div>
       </div>
@@ -77,23 +87,33 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Parking Area */}
         <div className="space-y-6">
-          <h3 className="text-lg font-bold text-white flex items-center gap-3">
-            <ParkingCircle className="w-5 h-5 text-porteo-orange" />
-            {t.parking}
-          </h3>
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-white flex items-center gap-3">
+              <ParkingCircle className="w-5 h-5 text-porteo-orange" />
+              {t.parking}
+            </h3>
+            <button 
+              onClick={() => onAddSlot?.('parking')}
+              className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-porteo-orange transition-all flex items-center gap-1 text-[10px] font-bold uppercase"
+            >
+              <Plus className="w-3 h-3" />
+              {t.add}
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             {filteredPatio.filter(s => s.type === 'parking').map((slot) => (
               <motion.div 
                 key={slot.id}
                 whileHover={{ scale: 1.02 }}
-                className={`p-4 rounded-3xl border transition-all ${getStatusColor(slot.status)}`}
+                onClick={() => onSlotClick?.(slot)}
+                className={`p-4 rounded-3xl border transition-all cursor-pointer ${getStatusColor(slot.status)}`}
               >
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-xs font-bold uppercase tracking-widest">{slot.label}</span>
                   {slot.status === 'occupied' && <Truck className="w-4 h-4" />}
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold opacity-60">{slot.status}</p>
+                  <p className="text-[10px] uppercase font-bold opacity-60">{t[slot.status as keyof typeof t] || slot.status}</p>
                   {slot.truckId && <p className="text-xs font-bold">{slot.truckId}</p>}
                 </div>
               </motion.div>
@@ -103,15 +123,25 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
 
         {/* Dock Area */}
         <div className="space-y-6">
-          <h3 className="text-lg font-bold text-white flex items-center gap-3">
-            <Warehouse className="w-5 h-5 text-porteo-orange" />
-            {t.docks}
-          </h3>
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-white flex items-center gap-3">
+              <Warehouse className="w-5 h-5 text-porteo-orange" />
+              {t.docks}
+            </h3>
+            <button 
+              onClick={() => onAddSlot?.('dock')}
+              className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-porteo-orange transition-all flex items-center gap-1 text-[10px] font-bold uppercase"
+            >
+              <Plus className="w-3 h-3" />
+              {t.add}
+            </button>
+          </div>
           <div className="space-y-4">
             {filteredPatio.filter(s => s.type === 'dock').map((slot) => (
               <div 
                 key={slot.id}
-                className={`p-6 rounded-[32px] border flex items-center justify-between transition-all ${getStatusColor(slot.status)}`}
+                onClick={() => onSlotClick?.(slot)}
+                className={`p-6 rounded-[32px] border flex items-center justify-between transition-all cursor-pointer ${getStatusColor(slot.status)}`}
               >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center">
@@ -119,7 +149,7 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
                   </div>
                   <div>
                     <p className="text-sm font-bold">{slot.truckId || (lang === 'en' ? 'Available' : 'Disponible')}</p>
-                    <p className="text-[10px] opacity-60 uppercase font-bold">{slot.status}</p>
+                    <p className="text-[10px] opacity-60 uppercase font-bold">{t[slot.status as keyof typeof t] || slot.status}</p>
                   </div>
                 </div>
                 {slot.status === 'occupied' && (
@@ -135,25 +165,35 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
 
         {/* Staging Area */}
         <div className="space-y-6">
-          <h3 className="text-lg font-bold text-white flex items-center gap-3">
-            <MapPin className="w-5 h-5 text-porteo-orange" />
-            {t.staging}
-          </h3>
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-white flex items-center gap-3">
+              <MapPin className="w-5 h-5 text-porteo-orange" />
+              {t.staging}
+            </h3>
+            <button 
+              onClick={() => onAddSlot?.('staging')}
+              className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-porteo-orange transition-all flex items-center gap-1 text-[10px] font-bold uppercase"
+            >
+              <Plus className="w-3 h-3" />
+              {t.add}
+            </button>
+          </div>
           <div className="space-y-4">
             {filteredPatio.filter(s => s.type === 'staging').map((slot) => (
               <div 
                 key={slot.id}
-                className={`p-6 rounded-[32px] border flex flex-col gap-4 transition-all ${getStatusColor(slot.status)}`}
+                onClick={() => onSlotClick?.(slot)}
+                className={`p-6 rounded-[32px] border flex flex-col gap-4 transition-all cursor-pointer ${getStatusColor(slot.status)}`}
               >
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-bold">{slot.label}</span>
-                  <span className="text-[10px] font-bold uppercase">{slot.status}</span>
+                  <span className="text-[10px] font-bold uppercase">{t[slot.status as keyof typeof t] || slot.status}</span>
                 </div>
                 {slot.status === 'occupied' ? (
                   <div className="space-y-3">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="opacity-60">Shipment #9921</span>
-                      <span className="font-bold">85% Complete</span>
+                      <span className="opacity-60">{t.shipment} #9921</span>
+                      <span className="font-bold">85% {t.complete}</span>
                     </div>
                     <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
                       <div className="bg-porteo-orange h-full w-[85%]" />

@@ -29,6 +29,8 @@ import { AIAssistant } from './AIAssistant';
 
 interface AssemblyLineProps {
   lang: 'en' | 'es';
+  inventoryItems: InventoryItem[];
+  setInventoryItems: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
 }
 
 interface ActiveLine {
@@ -48,14 +50,14 @@ interface AssemblyBot {
   status: 'active' | 'idle';
 }
 
-export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
+export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang, inventoryItems, setInventoryItems }) => {
   const [activeLines, setActiveLines] = useState<ActiveLine[]>([
     { id: 'L-01', kit: 'Alternator Assembly', progress: 65, status: 'running', operator: 'Maria Garcia', efficiency: 94, startTime: '08:00 AM' },
     { id: 'L-02', kit: 'Brake Kit - Front', progress: 20, status: 'running', operator: 'John Smith', efficiency: 88, startTime: '09:30 AM' },
     { id: 'L-03', kit: 'Engine Gasket Set', progress: 0, status: 'paused', operator: 'Alex Wong', efficiency: 0, startTime: '10:15 AM' }
   ]);
 
-  const [kits, setKits] = useState<InventoryItem[]>(MOCK_INVENTORY.filter(item => item.isKit));
+  const kits = useMemo(() => inventoryItems.filter(item => item.isKit), [inventoryItems]);
   const [uploadedData, setUploadedData] = useState<any[] | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<any | null>(null);
   const [selectedBot, setSelectedBot] = useState<AssemblyBot | null>(null);
@@ -171,9 +173,9 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
 
   const handleCreateBOM = (name: string) => {
     const newKit: InventoryItem = {
-      id: `KIT-${kits.length + 1}`,
+      id: `KIT-${Date.now()}`,
       name,
-      sku: `SKU-${Math.random().toString(36).substring(7).toUpperCase()}`,
+      sku: `KIT-${Math.random().toString(36).substring(7).toUpperCase()}`,
       brand: 'Porteo Internal',
       quantity: 0,
       unit: 'Kit',
@@ -183,10 +185,35 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
       isKit: true,
       components: newBomComponents.filter(c => c.sku)
     };
-    setKits(prev => [newKit, ...prev]);
+    setInventoryItems(prev => [newKit, ...prev]);
     setShowBomModal(false);
     setNewBomComponents([{ sku: '', quantity: 1 }]);
     addNotification(lang === 'en' ? `New BOM "${name}" created and added to library.` : `Nueva BOM "${name}" creada y añadida a la biblioteca.`, 'success');
+  };
+
+  const finishProduction = (lineId: string) => {
+    const line = activeLines.find(l => l.id === lineId);
+    if (!line) return;
+
+    const kitToUpdate = inventoryItems.find(k => k.name === line.kit);
+    if (kitToUpdate) {
+      setInventoryItems(prev => prev.map(item => {
+        if (item.id === kitToUpdate.id) {
+          return { ...item, quantity: item.quantity + 1 };
+        }
+        // Also deduct components if they exist
+        if (kitToUpdate.components) {
+          const component = kitToUpdate.components.find(c => c.sku === item.sku);
+          if (component) {
+            return { ...item, quantity: Math.max(0, item.quantity - component.quantity) };
+          }
+        }
+        return item;
+      }));
+      addNotification(lang === 'en' ? `Production of ${line.kit} finished. Inventory updated.` : `Producción de ${line.kit} finalizada. Inventario actualizado.`, 'success');
+    }
+    
+    setActiveLines(prev => prev.filter(l => l.id !== lineId));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -442,12 +469,22 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
                       >
                         <Layers className="w-5 h-5" />
                       </button>
-                      <button 
-                        onClick={() => toggleLineStatus(line.id)}
-                        className={`p-4 rounded-2xl transition-all ${line.status === 'running' ? 'bg-white/5 text-white/40 hover:text-white' : 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20'}`}
-                      >
-                        {line.status === 'running' ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                      </button>
+                      {line.progress >= 100 ? (
+                        <button 
+                          onClick={() => finishProduction(line.id)}
+                          className="p-4 bg-emerald-500 text-white rounded-2xl transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2 px-6"
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span className="text-xs font-bold uppercase tracking-widest">{lang === 'en' ? 'Finish' : 'Finalizar'}</span>
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => toggleLineStatus(line.id)}
+                          className={`p-4 rounded-2xl transition-all ${line.status === 'running' ? 'bg-white/5 text-white/40 hover:text-white' : 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20'}`}
+                        >
+                          {line.status === 'running' ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                        </button>
+                      )}
                       <button 
                         onClick={() => setShowSettingsModal(line)}
                         className="p-4 bg-white/5 text-white/40 hover:text-white rounded-2xl transition-all"
@@ -1225,7 +1262,7 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang }) => {
       {/* AI Assistant Floating Trigger */}
       <AIAssistant 
         role="Assembly Expert" 
-        language={lang} 
+        lang={lang} 
         context={`Current active lines: ${activeLines.length}. Global OEE: ${globalOEE}%. Active bots: ${bots.length}. Available kits: ${kits.length}.`} 
       />
     </div>

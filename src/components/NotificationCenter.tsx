@@ -7,13 +7,14 @@ import { MOCK_NOTIFICATIONS } from '../constants';
 interface NotificationCenterProps {
   isOpen: boolean;
   onClose: () => void;
-  language: Language;
+  lang: Language;
   notifications: WMSNotification[];
   onAction?: (action: string) => void;
   addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const NotificationCenter = ({ isOpen, onClose, language, notifications, onAction, addNotification }: NotificationCenterProps) => {
+export const NotificationCenter = ({ isOpen, onClose, lang, notifications, onAction, addNotification }: NotificationCenterProps) => {
+  const language = lang; // Alias for backward compatibility
   return (
     <AnimatePresence>
       {isOpen && (

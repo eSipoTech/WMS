@@ -6,12 +6,13 @@ import ReactMarkdown from 'react-markdown';
 
 interface AIAssistantProps {
   role: 'Control Tower' | 'Supply Chain Director' | 'COO Assistant' | 'Assembly Expert' | 'Warehouse Director';
-  language: 'en' | 'es';
+  lang: 'en' | 'es';
   context: string;
   onFileUpload?: (file: File) => void;
 }
 
-export const AIAssistant = ({ role, language, context, onFileUpload }: AIAssistantProps) => {
+export const AIAssistant = ({ role, lang, context, onFileUpload }: AIAssistantProps) => {
+  const language = lang; // Alias for backward compatibility
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: 'user' | 'ai', text: string }[]>([]);
   const [input, setInput] = useState('');
@@ -26,7 +27,7 @@ export const AIAssistant = ({ role, language, context, onFileUpload }: AIAssista
     setIsLoading(true);
 
     try {
-      const response = await getAIAssistance(role, context, userMsg, language);
+      const response = await getAIAssistance(role, userMsg, context, language);
       setMessages(prev => [...prev, { role: 'ai', text: response || 'Error' }]);
     } catch (error) {
       setMessages(prev => [...prev, { role: 'ai', text: 'Sorry, I encountered an error.' }]);

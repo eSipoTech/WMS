@@ -29,6 +29,7 @@ export interface InventoryItem {
   oemNumber?: string;
   compatibility?: string[]; // Vehicle models
   category?: 'Engine' | 'Brakes' | 'Suspension' | 'Electrical' | 'Body' | 'Other';
+  velocity?: 'High' | 'Medium' | 'Low';
   isKit?: boolean;
   components?: { sku: string; quantity: number }[];
 }
@@ -59,6 +60,8 @@ export interface TPLProcess {
   origin: string;
   destination: string;
   appointmentTime?: string;
+  date?: string;
+  customerRef?: string;
   status: 'collection' | 'in-transit-to-wh' | 'unloading' | 'classifying' | 'storage' | 'picking' | 'cross-dock' | 'loading' | 'delivery' | 'customer-facility' | 'returning' | 'documentation';
   steps: TPLStep[];
   documents?: string[];
@@ -99,7 +102,8 @@ export interface CustomerPricing {
 export interface SupplierRebate {
   id: string;
   supplierId: string;
-  threshold: number;
+  supplierName: string;
+  targetVolume: number;
   rebatePercentage: number;
   currentVolume: number;
   status: 'active' | 'achieved' | 'pending';
@@ -227,7 +231,7 @@ export const translations: Record<Language, Translation> = {
     intelligenceAgents: "Intelligence Agents",
     aiAssistants: "AI Assistants",
     marketToggle: "Switch to Mexico (ES)",
-    commercial: "Commercial & Contracts",
+    commercial: "Commercial",
     operations: "Warehouse Ops",
     storage: "Storage",
     crossDock: "Cross-Dock",
@@ -283,7 +287,7 @@ export const translations: Record<Language, Translation> = {
     intelligenceAgents: "Agentes de Inteligencia",
     aiAssistants: "Asistentes IA",
     marketToggle: "Cambiar a USA (EN)",
-    commercial: "Comercial y Contratos",
+    commercial: "Comercial",
     operations: "Ops de Almacén",
     storage: "Almacenamiento",
     crossDock: "Cruce de Andén",
@@ -314,7 +318,7 @@ export const translations: Record<Language, Translation> = {
     ecommerceIntegration: "Integración E-commerce",
     cartaPorte: "Carta Porte",
     immex: "Control IMMEX",
-    interoperabilityHub: "Hub de Interoperabilidad",
+    interoperabilityHub: "Hub Interoperabilidad",
     predictiveAnalytics: "Analítica Predictiva",
     riskAssessment: "Evaluación de Riesgos",
     portCitySync: "Sincronización Puerto-Ciudad",
