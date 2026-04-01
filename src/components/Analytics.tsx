@@ -261,8 +261,8 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
   };
 
   const renderChart = (type: string, data: any[], dataKeys: string[], colors: string[]) => {
-    const ChartComponent = type === 'bar' ? BarChart : type === 'line' ? RechartsLineChart : type === 'scatter' ? ScatterChart : AreaChart;
-    const DataComponent = type === 'bar' ? Bar : type === 'line' ? Line : type === 'scatter' ? Scatter : Area;
+    const ChartComponent = (type === 'bar' ? BarChart : type === 'line' ? RechartsLineChart : type === 'scatter' ? ScatterChart : AreaChart) as any;
+    const DataComponent = (type === 'bar' ? Bar : type === 'line' ? Line : type === 'scatter' ? Scatter : Area) as any;
 
     return (
       <ResponsiveContainer width="100%" height="100%">

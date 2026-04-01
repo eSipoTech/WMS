@@ -1,0 +1,191 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-id"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATIVO
+}
+
+enum OrderStatus {
+  PENDING
+  RECEIVING
+  PICKING
+  PACKING
+  SHIPPING
+  COMPLETED
+  CANCELLED
+}
+
+enum MovementType {
+  INBOUND
+  OUTBOUND
+  TRANSFER
+  ADJUSTMENT
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(OPERATIVO)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messagesSent     Message[] @relation("SentMessages")
+  messagesReceived Message[] @relation("ReceivedMessages")
+  activities       Activity[]
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  content    String
+  senderId   String
+  receiverId String?
+  isPublic   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  sender   User  @relation("SentMessages", fields: [senderId], references: [id])
+  receiver User? @relation("ReceivedMessages", fields: [receiverId], references: [id])
+}
+
+model SKU {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  category    String?
+  unit        String   @default("pcs")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inventory Inventory[]
+  orderItems OrderItem[]
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  name      String
+  location  String
+  country   String   @default("MX") // MX or USA
+  currency  String   @default("MXN")
+  createdAt DateTime @default(now())
+
+  bins      Bin[]
+  inventory Inventory[]
+}
+
+model Bin {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  warehouseId String
+  zone        String?
+  createdAt   DateTime @default(now())
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  inventory Inventory[]
+}
+
+model Inventory {
+  id          String   @id @default(uuid())
+  skuId       String
+  warehouseId String
+  binId       String
+  quantity    Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  sku       SKU       @relation(fields: [skuId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  bin       Bin       @relation(fields: [binId], references: [id])
+
+  @@unique([skuId, binId])
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  type        MovementType
+  status      OrderStatus @default(PENDING)
+  totalAmount Float       @default(0)
+  currency    String      @default("MXN")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items     OrderItem[]
+  movements Movement[]
+}
+
+model OrderItem {
+  id       String @id @default(uuid())
+  orderId  String
+  skuId    String
+  quantity Int
+  price    Float  @default(0)
+
+  order Order @relation(fields: [orderId], references: [id])
+  sku   SKU   @relation(fields: [skuId], references: [id])
+}
+
+model Movement {
+  id          String       @id @default(uuid())
+  orderId     String?
+  skuId       String
+  fromBinId   String?
+  toBinId     String?
+  quantity    Int
+  type        MovementType
+  createdAt   DateTime     @default(now())
+
+  order Order? @relation(fields: [orderId], references: [id])
+}
+
+model Lead {
+  id        String   @id @default(uuid())
+  company   String
+  contact   String
+  email     String
+  status    String   @default("NEW") // NEW, CONTACTED, PROPOSAL, CLOSED
+  pipeline  String   @default("SALES")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Vehicle {
+  id        String   @id @default(uuid())
+  plate     String   @unique
+  model     String
+  type      String
+  status    String   @default("AVAILABLE")
+  fuelType  String?
+  costPerKm Float    @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  details   String?
+  module    String   @default("CORE")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model AILog {
+  id        String   @id @default(uuid())
+  agentId   String
+  decision  String
+  context   String?
+  feedback  Int?     // 1-5 rating
+  createdAt DateTime @default(now())
+}

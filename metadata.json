@@ -1,5 +1,5 @@
 {
   "name": "Porteo WMS",
-  "description": "A next-generation Warehouse Management System for USA and Mexico markets, featuring 3D visualization, AI assistants, and advanced logistics optimization.",
+  "description": "Scalable Logistics Platform MVP with modular WMS, CRM, Fleet Management, AI Platform, and real-time internal communication. Supports multi-country operations (MX/USA) and AS/400 integration.",
   "requestFramePermissions": []
 }
