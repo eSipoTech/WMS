@@ -14,6 +14,14 @@ export interface Warehouse {
   };
 }
 
+export interface Activity {
+  id: string;
+  type: 'receiving' | 'picking' | 'shipping' | 'audit' | 'relocation';
+  description: string;
+  timestamp: string;
+  market: Market;
+}
+
 export interface InventoryItem {
   id: string;
   sku: string;
@@ -30,6 +38,7 @@ export interface InventoryItem {
   compatibility?: string[]; // Vehicle models
   category?: 'Engine' | 'Brakes' | 'Suspension' | 'Electrical' | 'Body' | 'Other';
   velocity?: 'High' | 'Medium' | 'Low';
+  market?: Market;
   isKit?: boolean;
   components?: { sku: string; quantity: number }[];
 }
@@ -43,6 +52,17 @@ export interface FinancialMetric {
 
 export type Market = 'USA' | 'MEXICO';
 export type Language = 'en' | 'es';
+export type UserRole = 'admin' | 'manager' | 'operator' | 'viewer';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: 'active' | 'inactive';
+  lastLogin?: string;
+  avatar?: string;
+}
 
 export interface TPLStep {
   id: string;
@@ -75,6 +95,28 @@ export interface WMSNotification {
   actionLabel?: { en: string; es: string };
   timestamp: string;
   read: boolean;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  billingCycle: 'monthly' | 'quarterly' | 'yearly';
+  status: 'active' | 'inactive';
+}
+
+export interface MasterLocation {
+  id: string;
+  warehouseId: string;
+  zone: string;
+  aisle: string;
+  rack: string;
+  level: string;
+  position: string;
+  type: 'picking' | 'bulk' | 'staging' | 'returns';
+  status: 'available' | 'occupied' | 'reserved';
 }
 
 export interface BinLocation {

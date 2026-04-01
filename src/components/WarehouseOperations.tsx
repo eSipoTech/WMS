@@ -23,7 +23,8 @@ import {
   ShieldCheck,
   Download,
   Plus,
-  Briefcase
+  Briefcase,
+  TrendingUp
 } from 'lucide-react';
 import { getAIInsight, getOperationalAdvice, getPredictiveDiscrepancy } from '../services/geminiService';
 
@@ -41,7 +42,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
   const [loading, setLoading] = useState<string | null>(null);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<string | null>(null);
-  const [showCartaPortePreview, setShowCartaPortePreview] = useState(false);
+  const [showDocumentPreview, setShowDocumentPreview] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [receivingStep, setReceivingStep] = useState(1);
@@ -127,22 +128,38 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
     }
   }, [inventoryItems]);
 
+  const recordActivity = async (type: string, description: string) => {
+    try {
+      await fetch('/api/activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, description, market })
+      });
+    } catch (error) {
+      console.error('Error recording activity:', error);
+    }
+  };
+
   const handleAction = async (action: string, data?: any) => {
     setLoading(action);
     
     if (action === 'scan') {
+      recordActivity('audit', `User initiated a scan for item verification`);
       await new Promise(resolve => setTimeout(resolve, 1000));
       setActiveModal('scan-result');
     } else if (action === 'start-receiving') {
+      recordActivity('receiving', `Receiving process started for ${data?.id || 'unknown shipment'}`);
       await new Promise(resolve => setTimeout(resolve, 500));
       setSelectedTask(data);
       setReceivingStep(1);
       setActiveModal('receiving-flow');
     } else if (action === 'optimize-slotting') {
+      recordActivity('audit', `AI Slotting Optimization initiated`);
       const insight = await getAIInsight("Provide a structured slotting optimization plan for a high-velocity electronics warehouse. Include specific zone reassignments and velocity-based placement advice.");
       setAiInsight(insight);
       setActiveModal('slotting-optimization');
     } else if (action === 'release-wave') {
+      recordActivity('picking', `Wave released for picking operations`);
       await new Promise(resolve => setTimeout(resolve, 1500));
       setTasks(prev => ({
         ...prev,
@@ -150,16 +167,33 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
       }));
       setActiveModal('wave-released');
     } else if (action === 'start-count') {
+      recordActivity('audit', `AI-driven inventory count initiated`);
       const insight = await getPredictiveDiscrepancy({ warehouse: 'Porteo Laredo', lastAudit: '2026-02-15' });
       setAiInsight(insight);
       setActiveModal('ai-audit');
+    } else if (action === 'confirm-putaway') {
+      recordActivity('receiving', `Put-away confirmed for scanned item`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setActiveModal('scan-result');
+      addNotification(language === 'en' ? 'Put-away confirmed! Inventory updated.' : '¡Guardado confirmado! Inventario actualizado.', 'success');
+    } else if (action === 'print-label') {
+      recordActivity('shipping', `Label printed for item`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setShowLabel(true);
     } else if (action === 'view-discrepancies') {
       setActiveModal('discrepancy-report');
-    } else if (action === 'confirm-putaway') {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setActiveModal(null);
-    } else if (action === 'print-label') {
-      setShowLabel(true);
+    } else if (action === 'download-discrepancy-report') {
+      const content = "SKU,Expected,Actual,Reason,Status\nSKU-882,45,44,Damaged,pending\nSKU-129,12,15,Misplaced,pending";
+      const blob = new Blob([content], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Discrepancy_Report_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      addNotification?.(language === 'en' ? 'Discrepancy report downloaded.' : 'Reporte de discrepancias descargado.', 'success');
     } else if (action === 'fix-discrepancy') {
       setDiscrepancies(prev => prev.map(d => d.sku === data.sku ? { ...d, status: 'resolved' } : d));
     }
@@ -194,7 +228,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
 
       <div className="flex-1 glass rounded-[32px] overflow-hidden flex flex-col">
         {activeSubTab === 'receiving' && (
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Inbound Operations' : 'Operaciones de Entrada'}</h3>
               <button 
@@ -241,7 +275,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
         )}
 
         {activeSubTab === 'picking' && (
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Picking Waves' : 'Olas de Surtido'}</h3>
               <div className="flex gap-3">
@@ -300,7 +334,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
         )}
 
         {activeSubTab === 'packing' && (
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Packing & Shipping' : 'Empaque y Envío'}</h3>
               <div className="flex gap-3">
@@ -309,17 +343,23 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                     setIsGenerating(true);
                     setTimeout(() => {
                       setIsGenerating(false);
-                      setShowCartaPortePreview(true);
+                      setShowDocumentPreview(true);
                     }, 1500);
                   }}
                   disabled={isGenerating}
                   className="px-4 py-2 bg-porteo-blue/10 border border-porteo-blue/30 rounded-xl text-xs font-bold text-porteo-blue flex items-center gap-2 hover:bg-porteo-blue/20 transition-all disabled:opacity-50"
                 >
                   {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  {language === 'en' ? 'Generate BOL v3.0' : 'Generar Carta Porte v3.0'}
+                  {market === 'USA' 
+                    ? (language === 'en' ? 'Generate VICS BOL' : 'Generar BOL VICS')
+                    : (language === 'en' ? 'Generate Carta Porte v3.0' : 'Generar Carta Porte v3.0')}
                 </button>
-                <button className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white flex items-center gap-2">
-                  <Printer className="w-4 h-4" />
+                <button 
+                  onClick={() => handleAction('print-label')}
+                  disabled={loading === 'printing'}
+                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white flex items-center gap-2 hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  {loading === 'printing' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
                   {language === 'en' ? 'Print Labels' : 'Imprimir Etiquetas'}
                 </button>
               </div>
@@ -358,7 +398,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
         )}
 
         {activeSubTab === 'omnichannel' && (
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Omnichannel Fulfillment' : 'Surtido Omnicanal'}</h3>
@@ -445,7 +485,13 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                   <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                     <div className="bg-porteo-orange h-full" style={{ width: `${Math.random() * 40 + 60}%` }} />
                   </div>
-                  <button className="w-full py-2 text-xs font-bold text-white/60 hover:text-white transition-colors">
+                  <button 
+                    onClick={() => {
+                      alert(language === 'en' ? `Opening management dashboard for ${channel.channel}...` : `Abriendo panel de gestión para ${channel.channel}...`);
+                      addNotification?.(language === 'en' ? `Channel ${channel.channel} management opened.` : `Gestión del canal ${channel.channel} abierta.`, 'info');
+                    }}
+                    className="w-full py-2 text-xs font-bold text-white/60 hover:text-white transition-colors"
+                  >
                     {language === 'en' ? 'Manage Channel' : 'Gestionar Canal'}
                   </button>
                 </div>
@@ -480,7 +526,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
         )}
 
         {activeSubTab === 'counts' && (
-          <div className="p-8 space-y-8">
+          <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Cyclic Count Management' : 'Gestión de Conteos Cíclicos'}</h3>
@@ -535,7 +581,13 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                               <div className="bg-porteo-orange h-full transition-all duration-1000" style={{ width: `${session.progress}%` }} />
                             </div>
                           </div>
-                          <button className="p-2 text-white/20 hover:text-white transition-colors">
+                          <button 
+                            onClick={() => {
+                              setSelectedTask(session);
+                              setActiveModal('task-details');
+                            }}
+                            className="p-2 text-white/20 hover:text-white transition-colors"
+                          >
                             <ArrowRight className="w-5 h-5" />
                           </button>
                         </div>
@@ -573,13 +625,16 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
               <div className="space-y-6">
                 <div className="glass rounded-3xl p-6 space-y-6">
                   <h4 className="text-sm font-bold text-white uppercase tracking-widest">{language === 'en' ? 'Accuracy Stats' : 'Estadísticas de Precisión'}</h4>
-                  <div className="space-y-4">
+                  <div 
+                    className="grid grid-cols-2 gap-4 cursor-pointer group"
+                    onClick={() => setActiveModal('accuracy-details')}
+                  >
                     {[
                       { label: language === 'en' ? 'Inventory Accuracy' : 'Precisión de Inventario', value: '99.85%', trend: '+0.12%' },
                       { label: language === 'en' ? 'Discrepancy Rate' : 'Tasa de Discrepancia', value: '0.15%', trend: '-0.05%' },
                       { label: language === 'en' ? 'Count Velocity' : 'Velocidad de Conteo', value: '450 SKU/h', trend: '+12%' },
                     ].map((stat, i) => (
-                      <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                      <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5 group-hover:border-porteo-orange/30 transition-all">
                         <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{stat.label}</p>
                         <div className="flex justify-between items-end">
                           <span className="text-xl font-bold text-white">{stat.value}</span>
@@ -588,6 +643,9 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                       </div>
                     ))}
                   </div>
+                  <p className="text-[10px] text-white/40 text-center italic">
+                    {language === 'en' ? 'Click stats to view detailed granularity' : 'Haga clic en las estadísticas para ver la granularidad detallada'}
+                  </p>
                 </div>
 
                 <div className="glass rounded-3xl p-6">
@@ -609,7 +667,11 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                       </div>
                     ))}
                   </div>
-                  <button className="w-full mt-6 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all">
+                  <button 
+                    onClick={() => handleAction('download-discrepancy-report')}
+                    className="w-full mt-6 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
                     {language === 'en' ? 'Full Discrepancy Report' : 'Reporte Completo de Discrepancias'}
                   </button>
                 </div>
@@ -619,9 +681,9 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
         )}
       </div>
 
-      {/* Carta Porte Preview Modal */}
+      {/* Document Preview Modal (BOL or Carta Porte) */}
       <AnimatePresence>
-        {showCartaPortePreview && (
+        {showDocumentPreview && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -665,14 +727,130 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                     <Download className="w-4 h-4" />
                     {language === 'en' ? 'Download PDF' : 'Descargar PDF'}
                   </button>
-                  <button onClick={() => setShowCartaPortePreview(false)} className="p-2 text-slate-400 hover:text-slate-900">
+                  <button onClick={() => setShowDocumentPreview(false)} className="p-2 text-slate-400 hover:text-slate-900">
                     <X className="w-6 h-6" />
                   </button>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-12 bg-slate-100/50">
-                <div className="bg-white shadow-xl border border-slate-200 p-12 max-w-3xl mx-auto min-h-[1000px] font-mono text-[10px] space-y-8">
+                {market === 'USA' ? (
+                  /* US Bill of Lading (VICS Standard) */
+                  <div className="bg-white shadow-xl border border-slate-200 p-12 max-w-3xl mx-auto min-h-[1000px] font-mono text-[9px] space-y-6 text-slate-900">
+                    <div className="flex justify-between border-b-2 border-slate-900 pb-4">
+                      <div className="space-y-1">
+                        <h1 className="text-xl font-black">STRAIGHT BILL OF LADING</h1>
+                        <p className="text-[8px] italic">Original - Not Negotiable</p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className="font-bold">Date: {new Date().toLocaleDateString()}</p>
+                        <p className="font-bold">BOL #: BOL-2024-99821</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-0 border border-slate-900">
+                      <div className="p-2 border-r border-b border-slate-900 space-y-1">
+                        <p className="font-bold border-b border-slate-200 pb-1">SHIP FROM</p>
+                        <p className="font-bold">PORTEO LOGISTICS USA LLC</p>
+                        <p>1234 Logistics Way</p>
+                        <p>Laredo, TX 78045</p>
+                        <p>SID#: 9928311</p>
+                      </div>
+                      <div className="p-2 border-b border-slate-900 space-y-1">
+                        <p className="font-bold border-b border-slate-200 pb-1">SHIP TO</p>
+                        <p className="font-bold">DISTRIBUTION CENTER NORTH</p>
+                        <p>5500 Industrial Blvd</p>
+                        <p>Chicago, IL 60609</p>
+                        <p>CID#: 4455221</p>
+                      </div>
+                      <div className="p-2 border-r border-slate-900 space-y-1">
+                        <p className="font-bold border-b border-slate-200 pb-1">CARRIER INFORMATION</p>
+                        <p>Carrier: SWIFT TRANSPORTATION</p>
+                        <p>SCAC: SWFT</p>
+                        <p>Trailer #: T-9921</p>
+                        <p>Seal #: S-112233</p>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        <p className="font-bold border-b border-slate-200 pb-1">FREIGHT CHARGES</p>
+                        <div className="flex gap-4">
+                          <div className="flex items-center gap-1"><div className="w-3 h-3 border border-slate-900 bg-slate-900"></div> Prepaid</div>
+                          <div className="flex items-center gap-1"><div className="w-3 h-3 border border-slate-900"></div> Collect</div>
+                          <div className="flex items-center gap-1"><div className="w-3 h-3 border border-slate-900"></div> 3rd Party</div>
+                        </div>
+                        <p className="pt-2 italic text-[8px]">Master BOL: No</p>
+                      </div>
+                    </div>
+
+                    <table className="w-full border-collapse border border-slate-900">
+                      <thead>
+                        <tr className="bg-slate-100 border-b border-slate-900 text-center font-bold">
+                          <th className="border-r border-slate-900 p-1">Handling Unit Qty</th>
+                          <th className="border-r border-slate-900 p-1">Type</th>
+                          <th className="border-r border-slate-900 p-1">Pkg Qty</th>
+                          <th className="border-r border-slate-900 p-1">Type</th>
+                          <th className="border-r border-slate-900 p-1">Weight</th>
+                          <th className="border-r border-slate-900 p-1">HM</th>
+                          <th className="p-1">Commodity Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-slate-200 text-center">
+                          <td className="border-r border-slate-900 p-1">12</td>
+                          <td className="border-r border-slate-900 p-1">PLT</td>
+                          <td className="border-r border-slate-900 p-1">480</td>
+                          <td className="border-r border-slate-900 p-1">CTN</td>
+                          <td className="border-r border-slate-900 p-1">14,200 lb</td>
+                          <td className="border-r border-slate-900 p-1">N</td>
+                          <td className="p-1 text-left">Automotive Parts - Brake Assemblies</td>
+                        </tr>
+                        <tr className="border-b border-slate-200 text-center">
+                          <td className="border-r border-slate-900 p-1">4</td>
+                          <td className="border-r border-slate-900 p-1">PLT</td>
+                          <td className="border-r border-slate-900 p-1">80</td>
+                          <td className="border-r border-slate-900 p-1">CTN</td>
+                          <td className="border-r border-slate-900 p-1">3,500 lb</td>
+                          <td className="border-r border-slate-900 p-1">N</td>
+                          <td className="p-1 text-left">Electrical Components - Starters</td>
+                        </tr>
+                        <tr className="h-20 border-b border-slate-900">
+                          <td className="border-r border-slate-900"></td>
+                          <td className="border-r border-slate-900"></td>
+                          <td className="border-r border-slate-900"></td>
+                          <td className="border-r border-slate-900"></td>
+                          <td className="border-r border-slate-900"></td>
+                          <td className="border-r border-slate-900"></td>
+                          <td></td>
+                        </tr>
+                      </tbody>
+                      <tfoot>
+                        <tr className="font-bold bg-slate-50">
+                          <td className="border-r border-slate-900 p-1 text-center">16</td>
+                          <td className="border-r border-slate-900 p-1">TOTALS</td>
+                          <td className="border-r border-slate-900 p-1 text-center">560</td>
+                          <td className="border-r border-slate-900 p-1"></td>
+                          <td className="border-r border-slate-900 p-1 text-center">17,700 lb</td>
+                          <td className="border-r border-slate-900 p-1"></td>
+                          <td className="p-1"></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="border border-slate-900 p-4 space-y-4">
+                        <p className="font-bold border-b border-slate-200 pb-1">SHIPPER SIGNATURE / DATE</p>
+                        <div className="h-12 border-b border-slate-300 border-dashed"></div>
+                        <p className="text-[7px]">This is to certify that the above named materials are properly classified, packaged, marked and labeled, and are in proper condition for transportation according to the applicable regulations of the DOT.</p>
+                      </div>
+                      <div className="border border-slate-900 p-4 space-y-4">
+                        <p className="font-bold border-b border-slate-200 pb-1">CARRIER SIGNATURE / PICKUP DATE</p>
+                        <div className="h-12 border-b border-slate-300 border-dashed"></div>
+                        <p className="text-[7px]">Carrier acknowledges receipt of packages and required placards. Carrier certifies emergency response information was made available and/or carrier has the DOT emergency response guidebook or equivalent document in the vehicle.</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Mexico Carta Porte v3.0 */
+                  <div className="bg-white shadow-xl border border-slate-200 p-12 max-w-3xl mx-auto min-h-[1000px] font-mono text-[10px] space-y-8">
                   {/* Document Header */}
                   <div className="flex justify-between items-start border-b-2 border-slate-900 pb-8">
                     <div className="space-y-1">
@@ -806,7 +984,8 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
+            </div>
             </motion.div>
           </motion.div>
         )}
@@ -902,14 +1081,20 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                   <div className="space-y-6">
                     <div className="flex justify-between items-center mb-8">
                       {[1, 2, 3].map((s) => (
-                        <div key={s} className="flex items-center gap-2">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                        <button 
+                          key={s} 
+                          onClick={() => {
+                            if (s < receivingStep) setReceivingStep(s);
+                          }}
+                          className="flex items-center gap-2 group"
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
                             receivingStep >= s ? 'bg-porteo-orange text-white' : 'bg-white/5 text-white/40'
-                          }`}>
+                          } ${s < receivingStep ? 'group-hover:scale-110 cursor-pointer' : 'cursor-default'}`}>
                             {s}
                           </div>
                           {s < 3 && <div className={`w-12 h-0.5 ${receivingStep > s ? 'bg-porteo-orange' : 'bg-white/5'}`} />}
-                        </div>
+                        </button>
                       ))}
                     </div>
 
@@ -960,20 +1145,33 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                               {language === 'en' ? 'Step 2: Damage Inspection' : 'Paso 2: Inspección de Daños'}
                             </p>
                             <div className="grid grid-cols-2 gap-4">
-                              <button className="p-6 bg-white/5 border border-white/10 rounded-2xl text-white hover:border-emerald-500/50 transition-all">
+                              <button 
+                                onClick={() => {
+                                  addNotification?.(language === 'en' ? 'No damage reported for this shipment.' : 'No se reportaron daños para este envío.', 'success');
+                                  setReceivingStep(3);
+                                }}
+                                className="p-6 bg-white/5 border border-white/10 rounded-2xl text-white hover:border-emerald-500/50 transition-all active:scale-95"
+                              >
                                 <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
                                 <span className="text-xs font-bold">{language === 'en' ? 'No Damage' : 'Sin Daños'}</span>
                               </button>
-                              <button className="p-6 bg-white/5 border border-white/10 rounded-2xl text-white hover:border-rose-500/50 transition-all">
+                              <button 
+                                onClick={() => {
+                                  alert(language === 'en' ? 'Opening damage report form...' : 'Abriendo formulario de reporte de daños...');
+                                  addNotification?.(language === 'en' ? 'Damage report initiated.' : 'Reporte de daños iniciado.', 'alert');
+                                  setReceivingStep(3);
+                                }}
+                                className="p-6 bg-white/5 border border-white/10 rounded-2xl text-white hover:border-rose-500/50 transition-all active:scale-95"
+                              >
                                 <AlertCircle className="w-8 h-8 mx-auto mb-2 text-rose-500" />
                                 <span className="text-xs font-bold">{language === 'en' ? 'Report Damage' : 'Reportar Daño'}</span>
                               </button>
                             </div>
                             <button 
-                              onClick={() => setReceivingStep(3)}
-                              className="w-full py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-colors"
+                              onClick={() => setReceivingStep(1)}
+                              className="w-full py-4 bg-white/5 text-white rounded-2xl font-bold hover:bg-white/10 transition-colors"
                             >
-                              {language === 'en' ? 'Next Step' : 'Siguiente Paso'}
+                              {language === 'en' ? 'Back' : 'Volver'}
                             </button>
                           </div>
                         </motion.div>
@@ -997,12 +1195,24 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                             <p className="text-white/40">
                               {language === 'en' ? 'All units verified and ready for put-away.' : 'Todas las unidades verificadas y listas para ubicación.'}
                             </p>
-                            <button 
-                              onClick={() => setActiveModal(null)}
-                              className="w-full py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-colors"
-                            >
-                              {language === 'en' ? 'Finish & Close' : 'Finalizar y Cerrar'}
-                            </button>
+                            <div className="flex gap-4">
+                              <button 
+                                onClick={() => setReceivingStep(2)}
+                                className="flex-1 py-4 bg-white/5 text-white rounded-2xl font-bold hover:bg-white/10 transition-colors"
+                              >
+                                {language === 'en' ? 'Back' : 'Volver'}
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  addNotification?.(language === 'en' ? 'Shipment received and put-away tasks generated.' : 'Envío recibido y tareas de guardado generadas.', 'success');
+                                  setActiveModal(null);
+                                  setReceivingStep(1);
+                                }}
+                                className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-colors"
+                              >
+                                {language === 'en' ? 'Finish & Close' : 'Finalizar y Cerrar'}
+                              </button>
+                            </div>
                           </div>
                         </motion.div>
                       )}
@@ -1062,6 +1272,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                         onClick={() => {
                           addNotification(language === 'en' ? 'Slotting changes applied' : 'Cambios de slotting aplicados', 'success');
                           setActiveModal(null);
+                          setAiInsight(null);
                         }}
                         className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-colors"
                       >
@@ -1104,7 +1315,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                     <div className="space-y-3">
                       <p className="text-xs font-bold text-white/40 uppercase tracking-widest">SKU List</p>
                       {[1, 2, 3].map(i => (
-                        <div key={i} className="p-4 bg-white/5 border border-white/10 rounded-xl flex justify-between items-center">
+                        <div key={i} className="p-4 bg-white/5 border border-white/10 rounded-xl flex justify-between items-center group">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold">
                               {i}
@@ -1114,7 +1325,23 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                               <p className="text-[10px] text-white/40">Bin: A-0{i}-12</p>
                             </div>
                           </div>
-                          <span className="text-sm font-bold text-white">x{Math.floor(Math.random() * 5) + 1}</span>
+                          <div className="flex items-center gap-4">
+                            <span className="text-sm font-bold text-white">x{Math.floor(Math.random() * 5) + 1}</span>
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => addNotification?.(language === 'en' ? `SKU-00${i}-X verified.` : `SKU-00${i}-X verificado.`, 'success')}
+                                className="p-2 bg-emerald-500/20 text-emerald-500 rounded-lg hover:bg-emerald-500/30 transition-colors"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => addNotification?.(language === 'en' ? `Discrepancy flagged for SKU-00${i}-X.` : `Discrepancia marcada para SKU-00${i}-X.`, 'alert')}
+                                className="p-2 bg-rose-500/20 text-rose-500 rounded-lg hover:bg-rose-500/30 transition-colors"
+                              >
+                                <AlertCircle className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1170,7 +1397,78 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                         {aiInsight || "Analyzing inventory patterns..."}
                       </div>
                     </div>
-                    <button className="w-full py-4 bg-porteo-orange text-white rounded-2xl font-bold">Download Audit Schedule</button>
+                    <button 
+                      onClick={() => {
+                        alert(language === 'en' ? 'Downloading audit schedule PDF...' : 'Descargando PDF de programación de auditoría...');
+                        addNotification?.(language === 'en' ? 'Audit schedule downloaded.' : 'Programación de auditoría descargada.', 'success');
+                      }}
+                      className="w-full py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-all active:scale-95"
+                    >
+                      {language === 'en' ? 'Download Audit Schedule' : 'Descargar Programación de Auditoría'}
+                    </button>
+                  </div>
+                )}
+
+                {activeModal === 'accuracy-details' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                      <TrendingUp className="w-8 h-8 text-emerald-500" />
+                      <div>
+                        <h5 className="text-white font-bold">{language === 'en' ? 'Accuracy Granularity' : 'Granularidad de Precisión'}</h5>
+                        <p className="text-xs text-white/40">{language === 'en' ? 'Detailed breakdown by zone and category' : 'Desglose detallado por zona y categoría'}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {[
+                        { zone: 'Zone A (Fast Movers)', accuracy: '99.92%', status: 'optimal' },
+                        { zone: 'Zone B (Bulk)', accuracy: '99.75%', status: 'optimal' },
+                        { zone: 'Zone C (Cold Storage)', accuracy: '98.40%', status: 'warning' },
+                        { zone: 'Zone D (Hazmat)', accuracy: '100%', status: 'optimal' },
+                      ].map((z, i) => (
+                        <div key={i} className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center">
+                          <div>
+                            <p className="text-sm font-bold text-white">{z.zone}</p>
+                            <div className="w-32 h-1.5 bg-white/10 rounded-full mt-2 overflow-hidden">
+                              <div 
+                                className={`h-full ${z.status === 'optimal' ? 'bg-emerald-500' : 'bg-porteo-orange'}`} 
+                                style={{ width: z.accuracy }} 
+                              />
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-sm font-bold ${z.status === 'optimal' ? 'text-emerald-500' : 'text-porteo-orange'}`}>{z.accuracy}</p>
+                            <p className="text-[10px] text-white/40 uppercase">{z.status}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="p-4 bg-porteo-orange/10 border border-porteo-orange/20 rounded-2xl">
+                      <p className="text-xs text-white/70 italic">
+                        {language === 'en' 
+                          ? 'AI suggests a targeted re-count for Zone C to investigate the 1.6% variance.' 
+                          : 'La IA sugiere un reconteo dirigido para la Zona C para investigar la variación del 1.6%.'}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={() => setActiveModal(null)}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold"
+                      >
+                        {language === 'en' ? 'Close' : 'Cerrar'}
+                      </button>
+                      <button 
+                        onClick={() => {
+                          addNotification?.(language === 'en' ? 'Targeted re-count scheduled for Zone C.' : 'Reconteo dirigido programado para la Zona C.', 'success');
+                          setActiveModal(null);
+                        }}
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/80 transition-all"
+                      >
+                        {language === 'en' ? 'Schedule Re-count' : 'Programar Reconteo'}
+                      </button>
+                    </div>
                   </div>
                 )}
 

@@ -58,7 +58,7 @@ export const AdvancedLogistics = ({
 }: { 
   lang: 'en' | 'es',
   warehouse: any,
-  addNotification?: (notif: any) => void
+  addNotification?: (msg: string, type?: 'market' | 'operational' | 'alert' | 'success' | 'info') => void
 }) => {
   const [activeTab, setActiveTab] = useState<'waves' | 'automation' | 'rma' | 'sustainability' | 'slotting' | 'labor' | 'maintenance'>('waves');
 
@@ -116,7 +116,7 @@ export const AdvancedLogistics = ({
 
       <div className="flex-1 glass rounded-[32px] overflow-hidden flex flex-col">
         {activeTab === 'waves' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Dynamic Wave Planning' : 'Planificación Dinámica de Oleadas'}</h3>
@@ -124,13 +124,9 @@ export const AdvancedLogistics = ({
               </div>
               <button 
                 onClick={() => {
-                  addNotification?.({
-                    type: 'success',
-                    title: { en: 'Wave Generation Started', es: 'Generación de Oleadas Iniciada' },
-                    description: { en: 'AI is analyzing pending orders to create optimal picking waves.', es: 'La IA está analizando pedidos pendientes para crear oleadas de picking óptimas.' },
-                    timestamp: new Date().toISOString()
-                  });
-                  alert(language === 'en' ? 'Auto-generating waves based on current order pool...' : 'Auto-generando oleadas basadas en el pool de pedidos actual...');
+                  const msg = language === 'en' ? 'AI is analyzing pending orders to create optimal picking waves.' : 'La IA está analizando pedidos pendientes para crear oleadas de picking óptimas.';
+                  addNotification?.(msg, 'success');
+                  alert(language === 'en' ? 'Auto-generating optimal waves based on current backlog and carrier cut-off times...' : 'Auto-generando oleadas óptimas basadas en el backlog actual y horarios de corte de transportistas...');
                 }}
                 className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all active:scale-95"
               >
@@ -198,7 +194,11 @@ export const AdvancedLogistics = ({
                       <div className="flex gap-2">
                         {wave.status === 'planning' && (
                           <button 
-                            onClick={() => alert(language === 'en' ? `Releasing wave ${wave.id}...` : `Liberando oleada ${wave.id}...`)}
+                            onClick={() => {
+                              const msg = language === 'en' ? `Wave ${wave.id} has been sent to the floor for execution.` : `La oleada ${wave.id} ha sido enviada al piso para su ejecución.`;
+                              alert(language === 'en' ? `Releasing wave ${wave.id}...` : `Liberando oleada ${wave.id}...`);
+                              addNotification?.(msg, 'info');
+                            }}
                             className="p-2 bg-white/5 rounded-xl text-white/60 hover:text-white hover:bg-porteo-orange transition-all active:scale-90"
                           >
                             <Play className="w-4 h-4" />
@@ -206,14 +206,22 @@ export const AdvancedLogistics = ({
                         )}
                         {wave.status === 'executing' && (
                           <button 
-                            onClick={() => alert(language === 'en' ? `Pausing wave ${wave.id}...` : `Pausando oleada ${wave.id}...`)}
+                            onClick={() => {
+                              const msg = language === 'en' ? `Execution of wave ${wave.id} has been suspended.` : `La ejecución de la oleada ${wave.id} ha sido suspendida.`;
+                              alert(language === 'en' ? `Pausing wave ${wave.id}...` : `Pausando oleada ${wave.id}...`);
+                              addNotification?.(msg, 'alert');
+                            }}
                             className="p-2 bg-white/5 rounded-xl text-white/60 hover:text-white hover:bg-red-500 transition-all active:scale-90"
                           >
                             <Pause className="w-4 h-4" />
                           </button>
                         )}
                         <button 
-                          onClick={() => alert(language === 'en' ? `Opening settings for ${wave.id}` : `Abriendo configuración para ${wave.id}`)}
+                          onClick={() => {
+                            const msg = language === 'en' ? `Modifying picking parameters for ${wave.id}.` : `Modificando parámetros de picking para ${wave.id}.`;
+                            alert(language === 'en' ? `Opening settings for ${wave.id}` : `Abriendo configuración para ${wave.id}`);
+                            addNotification?.(msg, 'info');
+                          }}
                           className="p-2 bg-white/5 rounded-xl text-white/60 hover:text-white transition-all active:scale-90"
                         >
                           <Settings className="w-4 h-4" />
@@ -244,7 +252,7 @@ export const AdvancedLogistics = ({
         )}
 
         {activeTab === 'automation' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Robotics & Automation Hub' : 'Centro de Robótica y Automatización'}</h3>
@@ -252,13 +260,21 @@ export const AdvancedLogistics = ({
               </div>
               <div className="flex gap-3">
                 <button 
-                  onClick={() => alert(language === 'en' ? 'Opening Fleet Configuration...' : 'Abriendo Configuración de Flota...')}
+                  onClick={() => {
+                    const msg = language === 'en' ? 'Accessing robot profiles and operational parameters.' : 'Accediendo a perfiles de robots y parámetros operativos.';
+                    alert(language === 'en' ? 'Opening Fleet Configuration...' : 'Abriendo Configuración de Flota...');
+                    addNotification?.(msg, 'info');
+                  }}
                   className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all active:scale-95"
                 >
                   {language === 'en' ? 'Fleet Config' : 'Config. Flota'}
                 </button>
                 <button 
-                  onClick={() => alert(language === 'en' ? 'Synchronizing all systems...' : 'Sincronizando todos los sistemas...')}
+                  onClick={() => {
+                    const msg = language === 'en' ? 'All automation controllers are now in sync.' : 'Todos los controladores de automatización están ahora sincronizados.';
+                    alert(language === 'en' ? 'Synchronizing all systems...' : 'Sincronizando todos los sistemas...');
+                    addNotification?.(msg, 'success');
+                  }}
                   className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all active:scale-95"
                 >
                   {language === 'en' ? 'All Systems Online' : 'Sistemas en Línea'}
@@ -312,13 +328,21 @@ export const AdvancedLogistics = ({
 
                   <div className="flex gap-2 pt-2">
                     <button 
-                      onClick={() => alert(language === 'en' ? `Running diagnostics for ${robot.name}...` : `Ejecutando diagnóstico para ${robot.name}...`)}
+                      onClick={() => {
+                        const msg = language === 'en' ? `Running diagnostics for ${robot.name}...` : `Ejecutando diagnóstico para ${robot.name}...`;
+                        alert(msg);
+                        addNotification?.(msg, 'info');
+                      }}
                       className="flex-1 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white hover:bg-white/10 transition-all active:scale-95"
                     >
                       {language === 'en' ? 'Diagnostics' : 'Diagnóstico'}
                     </button>
                     <button 
-                      onClick={() => alert(language === 'en' ? `Taking remote control of ${robot.name}...` : `Tomando control remoto de ${robot.name}...`)}
+                      onClick={() => {
+                        const msg = language === 'en' ? `Taking remote control of ${robot.name}...` : `Tomando control remoto de ${robot.name}...`;
+                        alert(msg);
+                        addNotification?.(msg, 'info');
+                      }}
                       className="flex-1 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white hover:bg-white/10 transition-all active:scale-95"
                     >
                       {language === 'en' ? 'Remote Control' : 'Control Remoto'}
@@ -331,7 +355,7 @@ export const AdvancedLogistics = ({
         )}
 
         {activeTab === 'slotting' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'AI Slotting Optimization' : 'Optimización de Slotting por IA'}</h3>
@@ -339,12 +363,8 @@ export const AdvancedLogistics = ({
               </div>
               <button 
                 onClick={() => {
-                  addNotification?.({
-                    type: 'info',
-                    title: { en: 'Slotting Analysis Started', es: 'Análisis de Slotting Iniciado' },
-                    description: { en: 'AI is recalculating optimal item placement based on recent velocity data.', es: 'La IA está recalculando la ubicación óptima de los artículos basándose en datos recientes de velocidad.' },
-                    timestamp: new Date().toISOString()
-                  });
+                  const msg = language === 'en' ? 'AI is recalculating optimal item placement based on recent velocity data.' : 'La IA está recalculando la ubicación óptima de los artículos basándose en datos recientes de velocidad.';
+                  addNotification?.(msg, 'info');
                   alert(language === 'en' ? 'Running AI Slotting Analysis...' : 'Ejecutando Análisis de Slotting por IA...');
                 }}
                 className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all active:scale-95"
@@ -400,7 +420,9 @@ export const AdvancedLogistics = ({
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
+                          const msg = language === 'en' ? 'SKU-882 has been re-slotted to Zone A.' : 'SKU-882 ha sido re-ubicado en la Zona A.';
                           alert(language === 'en' ? 'Applying optimization for SKU-882...' : 'Aplicando optimización para SKU-882...');
+                          addNotification?.(msg, 'success');
                         }}
                         className="mt-2 text-[8px] font-bold text-emerald-500 uppercase tracking-widest hover:underline"
                       >
@@ -414,6 +436,7 @@ export const AdvancedLogistics = ({
                         onClick={(e) => {
                           e.stopPropagation();
                           alert(language === 'en' ? 'Viewing congestion details for Zone B4...' : 'Viendo detalles de congestión para Zona B4...');
+                          addNotification?.(language === 'en' ? 'Analyzing traffic patterns in Zone B4.' : 'Analizando patrones de tráfico en la Zona B4.', 'info');
                         }}
                         className="mt-2 text-[8px] font-bold text-porteo-orange uppercase tracking-widest hover:underline"
                       >
@@ -435,7 +458,7 @@ export const AdvancedLogistics = ({
         )}
 
         {activeTab === 'labor' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Labor Management (LMS)' : 'Gestión de Mano de Obra (LMS)'}</h3>
@@ -444,12 +467,8 @@ export const AdvancedLogistics = ({
               <div className="flex gap-3">
                 <button 
                   onClick={() => {
-                    addNotification?.({
-                      type: 'info',
-                      title: { en: 'Shift Schedule Loaded', es: 'Horario de Turnos Cargado' },
-                      description: { en: 'Current shift: Morning A. 42 associates active.', es: 'Turno actual: Mañana A. 42 asociados activos.' },
-                      timestamp: new Date().toISOString()
-                    });
+                    const msg = language === 'en' ? 'Current shift: Morning A. 42 associates active.' : 'Turno actual: Mañana A. 42 asociados activos.';
+                    addNotification?.(msg, 'info');
                     alert(language === 'en' ? 'Shift Schedule Details:\n- Current Shift: Morning A (06:00 - 14:00)\n- Active Personnel: 42\n- On Break: 4\n- Next Shift Start: 14:00' : 'Detalles del Horario de Turnos:\n- Turno Actual: Mañana A (06:00 - 14:00)\n- Personal Activo: 42\n- En Descanso: 4\n- Inicio del Próximo Turno: 14:00');
                   }}
                   className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all active:scale-95"
@@ -458,12 +477,8 @@ export const AdvancedLogistics = ({
                 </button>
                 <button 
                   onClick={() => {
-                    addNotification?.({
-                      type: 'success',
-                      title: { en: 'Performance Report Generated', es: 'Reporte de Desempeño Generado' },
-                      description: { en: 'Daily productivity report is ready for review.', es: 'El reporte de productividad diaria está listo para revisión.' },
-                      timestamp: new Date().toISOString()
-                    });
+                    const msg = language === 'en' ? 'Daily productivity report is ready for review.' : 'El reporte de productividad diaria está listo para revisión.';
+                    addNotification?.(msg, 'success');
                     alert(language === 'en' ? 'Performance Report Summary:\n- Overall Productivity: 94%\n- Accuracy Rate: 99.8%\n- Safety Incidents: 0\n- Top Department: Picking' : 'Resumen del Reporte de Desempeño:\n- Productividad General: 94%\n- Tasa de Precisión: 99.8%\n- Incidentes de Seguridad: 0\n- Mejor Departamento: Picking');
                   }}
                   className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold hover:bg-porteo-orange/90 transition-all active:scale-95"
@@ -571,7 +586,11 @@ export const AdvancedLogistics = ({
                   ))}
                 </div>
                 <button 
-                  onClick={() => alert(language === 'en' ? 'Global Leaderboard:\n1. Marco Antonio (98%)\n2. Elena Gomez (95%)\n3. Roberto Diaz (92%)\n...\nYour Rank: #14 (84%)' : 'Tabla de Posiciones Global:\n1. Marco Antonio (98%)\n2. Elena Gomez (95%)\n3. Roberto Diaz (92%)\n...\nTu Rango: #14 (84%)')}
+                  onClick={() => {
+                    const msg = language === 'en' ? 'Viewing real-time performance rankings across the network.' : 'Viendo clasificaciones de desempeño en tiempo real en toda la red.';
+                    alert(language === 'en' ? 'Global Leaderboard:\n1. Marco Antonio (98%)\n2. Elena Gomez (95%)\n3. Roberto Diaz (92%)\n...\nYour Rank: #14 (84%)' : 'Tabla de Posiciones Global:\n1. Marco Antonio (98%)\n2. Elena Gomez (95%)\n3. Roberto Diaz (92%)\n...\nTu Rango: #14 (84%)');
+                    addNotification?.(msg, 'info');
+                  }}
                   className="w-full py-3 bg-porteo-orange/10 border border-porteo-orange/20 text-porteo-orange rounded-xl text-xs font-bold mt-6 hover:bg-porteo-orange hover:text-white transition-all active:scale-95"
                 >
                   {language === 'en' ? 'Open Leaderboard' : 'Abrir Tabla de Posiciones'}
@@ -582,7 +601,7 @@ export const AdvancedLogistics = ({
         )}
 
         {activeTab === 'rma' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Returns Management (RMA)' : 'Gestión de Devoluciones (RMA)'}</h3>
@@ -590,12 +609,8 @@ export const AdvancedLogistics = ({
               </div>
               <button 
                 onClick={() => {
-                  addNotification?.({
-                    type: 'info',
-                    title: { en: 'New RMA Draft Created', es: 'Nuevo Borrador de RMA Creado' },
-                    description: { en: 'Please complete the return details to submit.', es: 'Por favor complete los detalles de la devolución para enviar.' },
-                    timestamp: new Date().toISOString()
-                  });
+                  const msg = language === 'en' ? 'Please complete the return details to submit.' : 'Por favor complete los detalles de la devolución para enviar.';
+                  addNotification?.(msg, 'info');
                   alert(language === 'en' ? 'New RMA Request Form:\n- Step 1: Customer Info\n- Step 2: Item Selection\n- Step 3: Reason for Return\n- Step 4: Photo Upload' : 'Formulario de Nueva Solicitud de RMA:\n- Paso 1: Información del Cliente\n- Paso 2: Selección de Artículos\n- Paso 3: Motivo de la Devolución\n- Paso 4: Carga de Fotos');
                 }}
                 className="px-4 py-2 bg-porteo-orange text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all active:scale-95"
@@ -635,7 +650,11 @@ export const AdvancedLogistics = ({
                       <td className="py-4 px-4 text-sm text-white/40">{rma.date}</td>
                       <td className="py-4 px-4 text-right">
                         <button 
-                          onClick={() => alert(language === 'en' ? `RMA Details for ${rma.id}:\n- Customer: ${rma.customer}\n- Reason: ${rma.reason}\n- Status: ${rma.status.toUpperCase()}\n- Date: ${rma.date}\n- Tracking: TRK-${rma.id.split('-')[1]}` : `Detalles de RMA para ${rma.id}:\n- Cliente: ${rma.customer}\n- Motivo: ${rma.reason}\n- Estado: ${rma.status.toUpperCase()}\n- Fecha: ${rma.date}\n- Seguimiento: TRK-${rma.id.split('-')[1]}`)}
+                          onClick={() => {
+                            const msg = language === 'en' ? `Viewing full audit trail and status history for ${rma.id}.` : `Viendo rastro de auditoría completo e historial de estado para ${rma.id}.`;
+                            alert(language === 'en' ? `RMA Details for ${rma.id}:\n- Customer: ${rma.customer}\n- Reason: ${rma.reason}\n- Status: ${rma.status.toUpperCase()}\n- Date: ${rma.date}\n- Tracking: TRK-${rma.id.split('-')[1]}` : `Detalles de RMA para ${rma.id}:\n- Cliente: ${rma.customer}\n- Motivo: ${rma.reason}\n- Estado: ${rma.status.toUpperCase()}\n- Fecha: ${rma.date}\n- Seguimiento: TRK-${rma.id.split('-')[1]}`);
+                            addNotification?.(msg, 'info');
+                          }}
                           className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors active:scale-90"
                         >
                           <ArrowRight className="w-4 h-4" />
@@ -650,7 +669,7 @@ export const AdvancedLogistics = ({
         )}
 
         {activeTab === 'maintenance' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Automation Health & Predictive Maintenance' : 'Salud de Automatización y Mant. Predictivo'}</h3>
               <div className="flex gap-3">
@@ -734,7 +753,7 @@ export const AdvancedLogistics = ({
         )}
 
         {activeTab === 'sustainability' && (
-          <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar h-full pb-20">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Sustainability Dashboard' : 'Panel de Sostenibilidad'}</h3>
@@ -748,7 +767,10 @@ export const AdvancedLogistics = ({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <button 
-                onClick={() => alert(language === 'en' ? 'Carbon Footprint Breakdown:\n- Warehouse Ops: 4.2t\n- Transport: 6.8t\n- Packaging: 1.4t' : 'Desglose de Huella de Carbono:\n- Ops Almacén: 4.2t\n- Transporte: 6.8t\n- Embalaje: 1.4t')}
+                onClick={() => {
+                  alert(language === 'en' ? 'Carbon Footprint Breakdown:\n- Warehouse Operations: 4.2t (34%)\n- Transport & Logistics: 6.8t (55%)\n- Packaging Materials: 1.4t (11%)\n\nRecommended Action: Switch to electric forklifts in Zone B to reduce warehouse emissions by 0.5t/month.' : 'Desglose de Huella de Carbono:\n- Operaciones de Almacén: 4.2t (34%)\n- Transporte y Logística: 6.8t (55%)\n- Materiales de Embalaje: 1.4t (11%)\n\nAcción Recomendada: Cambiar a montacargas eléctricos en la Zona B para reducir las emisiones del almacén en 0.5t/mes.');
+                  addNotification?.(language === 'en' ? 'Detailed emission report generated for Q1 2026.' : 'Reporte detallado de emisiones generado para el primer trimestre de 2026.', 'info');
+                }}
                 className="p-6 bg-white/5 border border-white/10 rounded-[32px] space-y-4 text-left hover:border-emerald-500/40 hover:bg-white/10 transition-all active:scale-95 group"
               >
                 <div className="w-12 h-12 bg-emerald-500/20 text-emerald-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -764,7 +786,10 @@ export const AdvancedLogistics = ({
               </button>
 
               <button 
-                onClick={() => alert(language === 'en' ? 'Energy Efficiency Insights:\n- Solar contribution: 35%\n- LED lighting upgrade: +12%\n- HVAC optimization: +8%' : 'Insights de Eficiencia Energética:\n- Contribución solar: 35%\n- Mejora de iluminación LED: +12%\n- Optimización de HVAC: +8%')}
+                onClick={() => {
+                  alert(language === 'en' ? 'Energy Efficiency Insights:\n- Solar contribution: 35% (Peak: 12:00 PM)\n- LED lighting upgrade: +12% efficiency\n- HVAC optimization: +8% efficiency\n\nCall to Action: Schedule solar panel cleaning to regain 5% efficiency loss due to dust.' : 'Insights de Eficiencia Energética:\n- Contribución solar: 35% (Pico: 12:00 PM)\n- Mejora de iluminación LED: +12% eficiencia\n- Optimización de HVAC: +8% eficiencia\n\nLlamada a la Acción: Programar limpieza de paneles solares para recuperar el 5% de pérdida de eficiencia por polvo.');
+                  addNotification?.(language === 'en' ? 'Real-time energy consumption patterns analyzed.' : 'Patrones de consumo de energía en tiempo real analizados.', 'info');
+                }}
                 className="p-6 bg-white/5 border border-white/10 rounded-[32px] space-y-4 text-left hover:border-porteo-orange/40 hover:bg-white/10 transition-all active:scale-95 group"
               >
                 <div className="w-12 h-12 bg-porteo-orange/20 text-porteo-orange rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -780,7 +805,10 @@ export const AdvancedLogistics = ({
               </button>
 
               <button 
-                onClick={() => alert(language === 'en' ? 'Route Optimization Details:\n- AI-driven dynamic routing active\n- Empty mile reduction: 14,200km saved this month' : 'Detalles de Optimización de Rutas:\n- Enrutamiento dinámico impulsado por IA activo\n- Reducción de millas vacías: 14,200km ahorrados este mes')}
+                onClick={() => {
+                  alert(language === 'en' ? 'Route Optimization Details:\n- AI-driven dynamic routing active\n- Empty mile reduction: 14,200km saved this month\n- Fuel savings: $2,450.00\n\nCall to Action: Review "Empty Mile" report to identify further backhaul opportunities.' : 'Detalles de Optimización de Rutas:\n- Enrutamiento dinámico impulsado por IA activo\n- Reducción de millas vacías: 14,200km ahorrados este mes\n- Ahorro de combustible: $2,450.00\n\nLlamada a la Acción: Revisar reporte de "Millas Vacías" para identificar más oportunidades de retorno de carga.');
+                  addNotification?.(language === 'en' ? 'Logistics network efficiency is at an all-time high.' : 'La eficiencia de la red logística está en un máximo histórico.', 'info');
+                }}
                 className="p-6 bg-white/5 border border-white/10 rounded-[32px] space-y-4 text-left hover:border-blue-500/40 hover:bg-white/10 transition-all active:scale-95 group"
               >
                 <div className="w-12 h-12 bg-blue-500/20 text-blue-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -798,7 +826,10 @@ export const AdvancedLogistics = ({
               <div className="flex justify-between items-center mb-6">
                 <h4 className="text-lg font-bold text-white">{language === 'en' ? 'Sustainability Goals 2026' : 'Objetivos de Sostenibilidad 2026'}</h4>
                 <button 
-                  onClick={() => alert(language === 'en' ? 'Opening detailed sustainability projection chart...' : 'Abriendo gráfico detallado de proyección de sostenibilidad...')}
+                  onClick={() => {
+                    alert(language === 'en' ? 'Opening detailed sustainability projection chart...' : 'Abriendo gráfico detallado de proyección de sostenibilidad...');
+                    addNotification?.(language === 'en' ? 'Projecting environmental impact through 2026.' : 'Proyectando impacto ambiental hasta 2026.', 'info');
+                  }}
                   className="p-2 hover:bg-white/10 rounded-lg transition-colors active:scale-90"
                 >
                   <BarChart3 className="w-5 h-5 text-white/20 hover:text-white transition-colors" />

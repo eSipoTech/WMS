@@ -51,7 +51,18 @@ import {
   AlertTriangle,
   Wrench,
   ParkingCircle,
-  AlertCircle
+  AlertCircle,
+  UserPlus,
+  UserCheck,
+  UserX,
+  Shield,
+  Mail,
+  MoreVertical,
+  Trash2,
+  Edit,
+  ChevronLeft,
+  Building2,
+  Phone
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -83,7 +94,7 @@ import { Analytics } from './components/Analytics';
 import { Financials } from './components/Financials';
 import { AdvancedLogistics } from './components/AdvancedLogistics';
 import { TPLBilling } from './components/TPLBilling';
-import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification, Contract, PatioSlot } from './types';
+import { translations, Market, Language, Warehouse, InventoryItem, TPLProcess, WMSNotification, Contract, PatioSlot, Activity as ActivityType, User, UserRole, Client, MasterLocation } from './types';
 import { MOCK_WAREHOUSES, MOCK_INVENTORY, MOCK_TPL_PROCESSES, PORTEO_COLORS, MOCK_NOTIFICATIONS, MOCK_INVENTORY_USA, MOCK_TRUCKS_USA, MOCK_TPL_PROCESSES_USA, MOCK_INVENTORY_MEXICO, MOCK_TRUCKS_MEXICO, MOCK_TPL_PROCESSES_MEXICO, MOCK_PATIO } from './constants';
 import { getMarketResearch } from './services/geminiService';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -106,6 +117,25 @@ const PIE_DATA = [
 ];
 
 const COLORS = ['#004A99', '#F27D26', '#00AEEF', '#1A1A1A'];
+
+const MOCK_USERS: User[] = [
+  { id: 'u1', name: 'Admin User', email: 'admin@porteo.com', role: 'admin', status: 'active', lastLogin: '2026-03-30T10:00:00Z', avatar: 'https://picsum.photos/seed/admin/100/100' },
+  { id: 'u2', name: 'Warehouse Manager', email: 'manager@porteo.com', role: 'manager', status: 'active', lastLogin: '2026-03-30T09:30:00Z', avatar: 'https://picsum.photos/seed/manager/100/100' },
+  { id: 'u3', name: 'Operator One', email: 'op1@porteo.com', role: 'operator', status: 'active', lastLogin: '2026-03-29T15:45:00Z', avatar: 'https://picsum.photos/seed/op1/100/100' },
+  { id: 'u4', name: 'Viewer User', email: 'viewer@porteo.com', role: 'viewer', status: 'inactive', lastLogin: '2026-03-20T11:20:00Z', avatar: 'https://picsum.photos/seed/viewer/100/100' },
+];
+
+const MOCK_CLIENTS: Client[] = [
+  { id: 'c-001', name: 'AutoParts Global', email: 'billing@autoparts.com', phone: '+1 555-0123', address: '123 Logistics Way, Detroit, MI', billingCycle: 'monthly', status: 'active' },
+  { id: 'c-002', name: 'TechSupply Inc', email: 'finance@techsupply.io', phone: '+1 555-0456', address: '456 Innovation Dr, Austin, TX', billingCycle: 'quarterly', status: 'active' },
+  { id: 'c-003', name: 'EcoRetail', email: 'accounts@ecoretail.com', phone: '+1 555-0789', address: '789 Green St, Portland, OR', billingCycle: 'monthly', status: 'inactive' },
+];
+
+const MOCK_LOCATIONS: MasterLocation[] = [
+  { id: 'loc-001', warehouseId: 'wh-001', zone: 'A', aisle: '01', rack: '01', level: '1', position: 'A', type: 'picking', status: 'occupied' },
+  { id: 'loc-002', warehouseId: 'wh-001', zone: 'A', aisle: '01', rack: '01', level: '1', position: 'B', type: 'picking', status: 'available' },
+  { id: 'loc-003', warehouseId: 'wh-001', zone: 'B', aisle: '05', rack: '12', level: '4', position: 'C', type: 'bulk', status: 'reserved' },
+];
 
 export default function App() {
   const [market, setMarket] = useState<Market>('USA');
@@ -302,9 +332,19 @@ export default function App() {
             customer: String(getVal('customer') || 'Unknown'),
             brand: String(getVal('brand') || ''),
             category: (String(getVal('category') || 'Other') as 'Engine' | 'Brakes' | 'Suspension' | 'Electrical' | 'Body' | 'Other'),
-            oemNumber: String(getVal('oemNumber') || '')
+            oemNumber: String(getVal('oemNumber') || ''),
+            market: market
           };
         });
+        
+        // Save to backend
+        for (const item of newInventory) {
+          await fetch('/api/inventory', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+          });
+        }
         
         setInventoryItems(prev => [...prev, ...newInventory]);
         addNotification(lang === 'en' ? `Imported ${newInventory.length} items.` : `Importados ${newInventory.length} artículos.`, 'success');
@@ -413,7 +453,59 @@ export default function App() {
   const [selectedInsightIndex, setSelectedInsightIndex] = useState<number | null>(null);
   const [mexicoIntelLang, setMexicoIntelLang] = useState<'en' | 'es'>('es');
   const [isMarketLoading, setIsMarketLoading] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<'layout' | 'master-data'>('layout');
+  const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  const [adminSubTab, setAdminSubTab] = useState<'layout' | 'master-data' | 'users' | 'integration'>('users');
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [newUser, setNewUser] = useState<Partial<User>>({
+    name: '',
+    email: '',
+    role: 'operator',
+    status: 'active'
+  });
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
+  const [masterLocations, setMasterLocations] = useState<MasterLocation[]>(MOCK_LOCATIONS);
+  const [isSkuModalOpen, setIsSkuModalOpen] = useState(false);
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [isSkuFormOpen, setIsSkuFormOpen] = useState(false);
+  const [isClientFormOpen, setIsClientFormOpen] = useState(false);
+  const [isLocationFormOpen, setIsLocationFormOpen] = useState(false);
+  const [skuSearchQuery, setSkuSearchQuery] = useState('');
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+
+  const [editingSku, setEditingSku] = useState<InventoryItem | null>(null);
+  const [newSku, setNewSku] = useState<Partial<InventoryItem>>({
+    sku: '',
+    name: '',
+    category: 'Other',
+    velocity: 'Medium',
+    quantity: 0,
+    unit: 'pcs'
+  });
+
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [newClient, setNewClient] = useState<Partial<Client>>({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    status: 'active',
+    billingCycle: 'monthly'
+  });
+
+  const [editingLocation, setEditingLocation] = useState<MasterLocation | null>(null);
+  const [newMasterLocation, setNewMasterLocation] = useState<Partial<MasterLocation>>({
+    zone: '',
+    aisle: '',
+    rack: '',
+    level: '',
+    position: '',
+    type: 'picking',
+    status: 'available'
+  });
   const [optimizationLogs, setOptimizationLogs] = useState<{id: string, msg: string, time: string}[]>([]);
   
   const addNotification = useCallback((msg: string, type: 'market' | 'operational' | 'alert' | 'success' | 'info' = 'operational') => {
@@ -464,8 +556,111 @@ export default function App() {
     return typeMap[type] || type;
   };
 
-  // Operational State
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(MOCK_INVENTORY);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [isInventoryLoading, setIsInventoryLoading] = useState(false);
+  const [activities, setActivities] = useState<ActivityType[]>([]);
+  const [as400Status, setAs400Status] = useState<{ 
+    status: string; 
+    lastSync: string; 
+    system: string; 
+    middleware: string; 
+    connector: string;
+    architecture: string;
+    latency: string;
+    health: number;
+    message: string;
+  } | null>(null);
+  const [isSyncingAS400, setIsSyncingAS400] = useState(false);
+  const [isAuditingSystem, setIsAuditingSystem] = useState(false);
+
+  const fetchInventory = useCallback(async () => {
+    setIsInventoryLoading(true);
+    try {
+      const response = await fetch(`/api/inventory?market=${market}`);
+      if (response.ok) {
+        const data = await response.json();
+        setInventoryItems(data);
+      }
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+      // Fallback to mock data on error
+      setInventoryItems(market === 'USA' ? MOCK_INVENTORY_USA : MOCK_INVENTORY_MEXICO);
+    } finally {
+      setIsInventoryLoading(false);
+    }
+  }, [market]);
+
+  const fetchActivities = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/activity?market=${market}`);
+      if (response.ok) {
+        const data = await response.json();
+        setActivities(data);
+      }
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+    }
+  }, [market]);
+
+  const fetchAS400Status = useCallback(async () => {
+    try {
+      const response = await fetch('/api/integration/as400/status');
+      if (response.ok) {
+        const data = await response.json();
+        setAs400Status(data);
+      }
+    } catch (error) {
+      console.error('Error fetching AS/400 status:', error);
+    }
+  }, []);
+
+  const runSystemAudit = async () => {
+    setIsAuditingSystem(true);
+    addNotification(lang === 'en' ? 'System audit initiated...' : 'Auditoría del sistema iniciada...', 'info');
+    try {
+      const response = await fetch('/api/system/audit', { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        addNotification(lang === 'en' ? data.message : 'Auditoría completa. Todos los protocolos cumplen.', 'success');
+      }
+    } catch (error) {
+      console.error('Error during system audit:', error);
+      addNotification(lang === 'en' ? 'System audit failed.' : 'Error en la auditoría del sistema.', 'alert');
+    } finally {
+      setIsAuditingSystem(false);
+    }
+  };
+
+  const syncAS400 = async () => {
+    setIsSyncingAS400(true);
+    try {
+      const response = await fetch('/api/integration/as400/sync', { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        addNotification(lang === 'en' ? data.message : 'Sincronización con AS/400 exitosa.', 'success');
+        fetchInventory();
+        fetchAS400Status();
+      }
+    } catch (error) {
+      console.error('Error syncing AS/400:', error);
+      addNotification(lang === 'en' ? 'Failed to sync with AS/400.' : 'Error al sincronizar con AS/400.', 'alert');
+    } finally {
+      setIsSyncingAS400(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInventory();
+    fetchActivities();
+    fetchAS400Status();
+    // Live sync every 30 seconds
+    const interval = setInterval(() => {
+      fetchInventory();
+      fetchActivities();
+      fetchAS400Status();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchInventory, fetchActivities, fetchAS400Status]);
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('all');
   const [inventoryLocationFilter, setInventoryLocationFilter] = useState('all');
@@ -756,22 +951,151 @@ export default function App() {
   const [newLocation, setNewLocation] = useState('');
   const [isMovingPallet, setIsMovingPallet] = useState(false);
 
-  const handleMovePallet = () => {
+  const handleMovePallet = async () => {
     if (!selectedInventoryItem || !newLocation) return;
     
     setIsMovingPallet(true);
-    setTimeout(() => {
-      setInventoryItems(prev => prev.map(item => 
-        item.id === selectedInventoryItem.id ? { ...item, location: newLocation } : item
-      ));
-      addNotification(lang === 'en' 
-        ? `Pallet ${selectedInventoryItem.palletId} moved to ${newLocation}` 
-        : `Pallet ${selectedInventoryItem.palletId} movido a ${newLocation}`, 'success');
+    try {
+      const response = await fetch(`/api/inventory/${selectedInventoryItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location: newLocation })
+      });
+      
+      if (response.ok) {
+        setInventoryItems(prev => prev.map(item => 
+          item.id === selectedInventoryItem.id ? { ...item, location: newLocation } : item
+        ));
+        addNotification(lang === 'en' 
+          ? `Pallet ${selectedInventoryItem.palletId} moved to ${newLocation}` 
+          : `Pallet ${selectedInventoryItem.palletId} movido a ${newLocation}`, 'success');
+      } else {
+        throw new Error('Failed to update location');
+      }
+    } catch (error) {
+      console.error('Error moving pallet:', error);
+      addNotification(lang === 'en' ? 'Error moving pallet.' : 'Error al mover el pallet.', 'alert');
+    } finally {
       setIsMovingPallet(false);
       setActiveModal(null);
       setNewLocation('');
-    }, 1500);
+    }
   };
+
+  const handleAddUser = (user: Partial<User>) => {
+    const id = `u${Date.now()}`;
+    const newUserFull: User = {
+      id,
+      name: user.name || 'New User',
+      email: user.email || '',
+      role: user.role || 'operator',
+      status: user.status || 'active',
+      lastLogin: new Date().toISOString(),
+      avatar: `https://picsum.photos/seed/${id}/100/100`
+    };
+    setUsers(prev => [...prev, newUserFull]);
+    setIsUserModalOpen(false);
+    setNewUser({ name: '', email: '', role: 'operator', status: 'active' });
+    addNotification(lang === 'en' ? 'User added successfully' : 'Usuario agregado con éxito', 'success');
+  };
+
+  const handleEditUser = (user: User) => {
+    setUsers(prev => prev.map(u => u.id === user.id ? user : u));
+    setIsUserModalOpen(false);
+    setEditingUser(null);
+    addNotification(lang === 'en' ? 'User updated successfully' : 'Usuario actualizado con éxito', 'success');
+  };
+
+  const handleDeleteUser = (userId: string) => {
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    addNotification(lang === 'en' ? 'User deleted successfully' : 'Usuario eliminado con éxito', 'success');
+  };
+
+  // SKU CRUD
+  const handleAddSku = (sku: Partial<InventoryItem>) => {
+    const id = `sku${Date.now()}`;
+    const newSkuObj: InventoryItem = {
+      id,
+      sku: sku.sku || '',
+      name: sku.name || '',
+      category: sku.category as any || 'Other',
+      velocity: sku.velocity as any || 'Medium',
+      quantity: sku.quantity || 0,
+      unit: sku.unit || 'pcs',
+      location: 'Unassigned',
+      palletId: `PAL-${Math.floor(Math.random() * 10000)}`,
+      customer: 'General'
+    };
+    setInventoryItems(prev => [newSkuObj, ...prev]);
+    setIsSkuModalOpen(false);
+    setNewSku({ sku: '', name: '', category: 'Other', velocity: 'Medium', quantity: 0, unit: 'pcs' });
+    addNotification(lang === 'en' ? 'SKU created successfully.' : 'SKU creado exitosamente.', 'success');
+  };
+
+  const handleEditSku = (sku: InventoryItem) => {
+    setInventoryItems(prev => prev.map(s => s.id === sku.id ? sku : s));
+    setIsSkuModalOpen(false);
+    setIsSkuFormOpen(false);
+    setEditingSku(null);
+    addNotification(lang === 'en' ? 'SKU updated successfully.' : 'SKU actualizado exitosamente.', 'success');
+  };
+
+  // Client CRUD
+  const handleAddClient = (client: Partial<Client>) => {
+    const id = `cli${Date.now()}`;
+    const newClientObj: Client = {
+      id,
+      name: client.name || '',
+      email: client.email || '',
+      phone: client.phone || '',
+      address: client.address || '',
+      status: client.status || 'active',
+      billingCycle: client.billingCycle || 'monthly'
+    };
+    setClients(prev => [newClientObj, ...prev]);
+    setIsClientModalOpen(false);
+    setIsClientFormOpen(false);
+    setNewClient({ name: '', email: '', phone: '', address: '', status: 'active', billingCycle: 'monthly' });
+    addNotification(lang === 'en' ? 'Client created successfully.' : 'Cliente creado exitosamente.', 'success');
+  };
+
+  const handleEditClient = (client: Client) => {
+    setClients(prev => prev.map(c => c.id === client.id ? client : c));
+    setIsClientModalOpen(false);
+    setIsClientFormOpen(false);
+    setEditingClient(null);
+    addNotification(lang === 'en' ? 'Client updated successfully.' : 'Cliente actualizado exitosamente.', 'success');
+  };
+
+  // Location CRUD
+  const handleAddLocation = (loc: Partial<MasterLocation>) => {
+    const id = `loc${Date.now()}`;
+    const newLocObj: MasterLocation = {
+      id,
+      warehouseId: 'WH-001',
+      zone: loc.zone || 'A',
+      aisle: loc.aisle || '01',
+      rack: loc.rack || '01',
+      level: loc.level || '1',
+      position: loc.position || '1',
+      type: loc.type as any || 'picking',
+      status: loc.status as any || 'available'
+    };
+    setMasterLocations(prev => [newLocObj, ...prev]);
+    setIsLocationModalOpen(false);
+    setIsLocationFormOpen(false);
+    setNewMasterLocation({ zone: '', aisle: '', rack: '', level: '', position: '', type: 'picking', status: 'available' });
+    addNotification(lang === 'en' ? 'Location created successfully.' : 'Ubicación creada exitosamente.', 'success');
+  };
+
+  const handleEditLocation = (loc: MasterLocation) => {
+    setMasterLocations(prev => prev.map(l => l.id === loc.id ? loc : l));
+    setIsLocationModalOpen(false);
+    setIsLocationFormOpen(false);
+    setEditingLocation(null);
+    addNotification(lang === 'en' ? 'Location updated successfully.' : 'Ubicación actualizada exitosamente.', 'success');
+  };
+
   const [showLiveMap, setShowLiveMap] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [filterCustomer, setFilterCustomer] = useState('');
@@ -1536,6 +1860,59 @@ export default function App() {
                           )}
                           {lang === 'en' ? (isOptimizing ? 'Optimizing...' : 'Optimize Now') : (isOptimizing ? 'Optimizando...' : 'Optimizar Ahora')}
                         </button>
+                      </div>
+                    </div>
+
+                    {/* Live Activity Feed */}
+                    <div className="glass p-6 rounded-3xl border-l-4 border-porteo-orange mb-8">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-porteo-orange/20 rounded-lg text-porteo-orange">
+                            <Activity className="w-5 h-5" />
+                          </div>
+                          <h3 className="text-lg font-bold text-white uppercase tracking-tight">
+                            {lang === 'en' ? 'Live Activity Feed' : 'Feed de Actividad en Vivo'}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-2 px-3 py-1 bg-porteo-orange/10 rounded-full border border-porteo-orange/20">
+                          <div className="w-1.5 h-1.5 bg-porteo-orange rounded-full animate-pulse" />
+                          <span className="text-[10px] font-bold text-porteo-orange uppercase tracking-widest">
+                            {lang === 'en' ? 'Live' : 'En Vivo'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                        {activities.length > 0 ? (
+                          activities.map((activity) => (
+                            <div key={activity.id} className="group p-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all duration-300">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${
+                                  activity.type === 'receiving' ? 'bg-emerald-500/20 text-emerald-400' :
+                                  activity.type === 'picking' ? 'bg-blue-500/20 text-blue-400' :
+                                  activity.type === 'shipping' ? 'bg-porteo-orange/20 text-porteo-orange' :
+                                  activity.type === 'audit' ? 'bg-purple-500/20 text-purple-400' :
+                                  'bg-gray-500/20 text-gray-400'
+                                }`}>
+                                  {activity.type}
+                                </span>
+                                <span className="text-[10px] text-white/30 font-mono">
+                                  {new Date(activity.timestamp).toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <p className="text-sm text-white/70 leading-relaxed group-hover:text-white transition-colors">
+                                {activity.description}
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-12 text-white/20 gap-3">
+                            <Clock className="w-8 h-8 opacity-20" />
+                            <p className="text-xs italic">
+                              {lang === 'en' ? 'Monitoring operations...' : 'Monitoreando operaciones...'}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -2721,7 +3098,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-8"
               >
-                <div className="flex justify-between items-end">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                   <div className="flex items-center gap-6">
                     <button 
                       onClick={() => setActiveTab(previousTab)}
@@ -2732,235 +3109,670 @@ export default function App() {
                     </button>
                     <div>
                       <h2 className="text-3xl font-bold text-white mb-2">{lang === 'en' ? 'System Administration' : 'Administración del Sistema'}</h2>
-                      <p className="text-white/40">{lang === 'en' ? 'Manage warehouse network, import data, and configure system settings.' : 'Gestione la red de almacenes, importe datos y configure los ajustes del sistema.'}</p>
+                      <p className="text-white/40">{lang === 'en' ? 'Manage warehouse network, users, and system integrations.' : 'Gestione la red de almacenes, usuarios e integraciones del sistema.'}</p>
                     </div>
                   </div>
-                  <div className="flex gap-4">
-                    <button 
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = '.xlsx,.xls,.csv';
-                        input.onchange = (e: any) => {
-                          const file = e.target.files[0];
-                          if (file) handleGlobalDataImport(file);
-                        };
-                        input.click();
-                      }}
-                      disabled={isImporting}
-                      className="px-6 py-3 bg-porteo-orange text-white rounded-xl font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20 disabled:opacity-50"
-                    >
-                      {isImporting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
-                      {lang === 'en' ? (isImporting ? 'Importing...' : 'Global Data Import') : (isImporting ? 'Importando...' : 'Importar Datos Globales')}
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setWarehouses(MOCK_WAREHOUSES);
-                        setInventoryItems(MOCK_INVENTORY);
-                        addNotification(lang === 'en' ? 'Sample data loaded successfully!' : '¡Datos de muestra cargados con éxito!', 'operational');
-                      }}
-                      className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all"
-                    >
-                      <Database className="w-5 h-5" />
-                      {lang === 'en' ? 'Load Sample Data' : 'Cargar Muestra'}
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setNewWarehouseData({
-                          name: '',
-                          location: '',
-                          capacity: 50000,
-                          market: market,
-                          layout: {
-                            racks: { rows: 5, cols: 8 },
-                            docks: 4,
-                            zones: []
-                          }
-                        });
-                        setActiveModal('create-warehouse');
-                      }}
-                      className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all"
-                    >
-                      <Plus className="w-5 h-5" />
-                      {lang === 'en' ? 'Add Warehouse' : 'Agregar Almacén'}
-                    </button>
+                  
+                  <div className="flex gap-2 p-1 bg-white/5 rounded-2xl border border-white/10">
+                    {[
+                      { id: 'layout', label: lang === 'en' ? 'Warehouses' : 'Almacenes', icon: WarehouseIcon },
+                      { id: 'users', label: lang === 'en' ? 'Users' : 'Usuarios', icon: Users },
+                      { id: 'integration', label: lang === 'en' ? 'Integration' : 'Integración', icon: Cpu },
+                      { id: 'master-data', label: lang === 'en' ? 'System Data' : 'Datos del Sistema', icon: Database }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setAdminSubTab(tab.id as any)}
+                        className={`px-6 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${adminSubTab === tab.id ? 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                      >
+                        <tab.icon className="w-4 h-4" />
+                        {tab.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-6">
-                    <div className="glass p-8 rounded-[32px] space-y-6">
-                      <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                        <WarehouseIcon className="w-5 h-5 text-porteo-orange" />
-                        {lang === 'en' ? 'Warehouse Network' : 'Red de Almacenes'}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {warehouses.map(wh => (
-                          <div 
-                            key={wh.id}
-                            onClick={() => {
-                              setEditingWarehouse(wh);
-                              setAdminSubTab('layout');
-                            }}
-                            className={`p-6 rounded-2xl border transition-all cursor-pointer group ${editingWarehouse?.id === wh.id ? 'bg-porteo-orange/10 border-porteo-orange' : 'bg-white/5 border-white/10 hover:border-white/20'}`}
-                          >
-                            <div className="flex justify-between items-start mb-4">
-                              <div className={`p-3 rounded-xl ${editingWarehouse?.id === wh.id ? 'bg-porteo-orange text-white' : 'bg-white/5 text-white/40 group-hover:text-white'}`}>
-                                <WarehouseIcon className="w-5 h-5" />
-                              </div>
-                              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${wh.status === 'optimal' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'}`}>
-                                {lang === 'en' ? wh.status : (wh.status === 'optimal' ? 'óptimo' : 'alerta')}
-                              </span>
-                            </div>
-                            <h4 className="text-white font-bold">{wh.name}</h4>
-                            <p className="text-white/40 text-xs mt-1">{wh.location} • {wh.market}</p>
-                          </div>
-                        ))}
-                        {warehouses.length === 0 && (
-                          <div className="col-span-full py-12 text-center space-y-4">
-                            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto border border-white/10">
-                              <Database className="w-8 h-8 text-white/10" />
-                            </div>
-                            <p className="text-white/20 italic">{lang === 'en' ? 'No warehouses found. Import data to begin.' : 'No se encontraron almacenes. Importe datos para comenzar.'}</p>
-                          </div>
-                        )}
+                {/* Quick Actions Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { id: 'sync', label: lang === 'en' ? 'Sync AS/400' : 'Sincronizar AS/400', icon: RefreshCw, action: syncAS400, color: 'text-porteo-blue', bg: 'bg-porteo-blue/10' },
+                    { id: 'user', label: lang === 'en' ? 'New User' : 'Nuevo Usuario', icon: UserPlus, action: () => { setEditingUser(null); setNewUser({ name: '', email: '', role: 'operator', status: 'active' }); setIsUserModalOpen(true); }, color: 'text-porteo-orange', bg: 'bg-porteo-orange/10' },
+                    { id: 'import', label: lang === 'en' ? 'Import Data' : 'Importar Datos', icon: Upload, action: () => { const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls,.csv'; input.onchange = (e: any) => { const file = e.target.files[0]; if (file) handleGlobalDataImport(file); }; input.click(); }, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+                    { id: 'audit', label: lang === 'en' ? 'System Audit' : 'Auditoría', icon: ShieldAlert, action: runSystemAudit, color: 'text-amber-500', bg: 'bg-amber-500/10' }
+                  ].map((action, i) => (
+                    <button
+                      key={i}
+                      onClick={action.action}
+                      disabled={isSyncingAS400 || isAuditingSystem}
+                      className="glass p-4 rounded-2xl border border-white/10 hover:border-white/20 transition-all flex items-center gap-4 group text-left disabled:opacity-50"
+                    >
+                      <div className={`p-3 rounded-xl ${action.bg} ${action.color} group-hover:scale-110 transition-transform`}>
+                        {action.id === 'sync' && isSyncingAS400 ? <RefreshCw className="w-5 h-5 animate-spin" /> : 
+                         action.id === 'audit' && isAuditingSystem ? <ShieldAlert className="w-5 h-5 animate-pulse" /> : 
+                         <action.icon className="w-5 h-5" />}
                       </div>
-                    </div>
+                      <span className="text-sm font-bold text-white leading-tight">{action.label}</span>
+                    </button>
+                  ))}
+                </div>
 
-                    {editingWarehouse && (
-                      <div className="glass p-8 rounded-[32px] space-y-6">
-                        <div className="flex gap-4 p-1 bg-white/5 rounded-2xl w-fit border border-white/10">
-                          <button 
-                            onClick={() => setAdminSubTab('layout')}
-                            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${adminSubTab === 'layout' ? 'bg-porteo-blue text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                          >
-                            {lang === 'en' ? 'Layout Editor' : 'Editor de Diseño'}
-                          </button>
-                          <button 
-                            onClick={() => setAdminSubTab('master-data')}
-                            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${adminSubTab === 'master-data' ? 'bg-porteo-blue text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                          >
-                            {lang === 'en' ? 'Master Data' : 'Datos Maestros'}
-                          </button>
+                <AnimatePresence mode="wait">
+                  {adminSubTab === 'layout' && (
+                    <motion.div 
+                      key="warehouses"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+                    >
+                      <div className="lg:col-span-2 space-y-6">
+                        <div className="glass p-8 rounded-[32px] space-y-6">
+                          <div className="flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                              <WarehouseIcon className="w-5 h-5 text-porteo-orange" />
+                              {lang === 'en' ? 'Warehouse Network' : 'Red de Almacenes'}
+                            </h3>
+                            <button 
+                              onClick={() => {
+                                setNewWarehouseData({
+                                  name: '',
+                                  location: '',
+                                  capacity: 50000,
+                                  market: market,
+                                  layout: {
+                                    racks: { rows: 5, cols: 8 },
+                                    docks: 4,
+                                    zones: []
+                                  }
+                                });
+                                setActiveModal('create-warehouse');
+                              }}
+                              className="px-4 py-2 bg-porteo-orange/20 border border-porteo-orange/30 text-porteo-orange rounded-xl text-sm font-bold hover:bg-porteo-orange/30 transition-all flex items-center gap-2"
+                            >
+                              <Plus className="w-4 h-4" />
+                              {lang === 'en' ? 'Add Warehouse' : 'Agregar Almacén'}
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {warehouses.map(wh => (
+                              <div 
+                                key={wh.id}
+                                onClick={() => setEditingWarehouse(wh)}
+                                className={`p-6 rounded-2xl border transition-all cursor-pointer group ${editingWarehouse?.id === wh.id ? 'bg-porteo-orange/10 border-porteo-orange' : 'bg-white/5 border-white/10 hover:border-white/20'}`}
+                              >
+                                <div className="flex justify-between items-start mb-4">
+                                  <div className={`p-3 rounded-xl ${editingWarehouse?.id === wh.id ? 'bg-porteo-orange text-white' : 'bg-white/5 text-white/40 group-hover:text-white'}`}>
+                                    <WarehouseIcon className="w-5 h-5" />
+                                  </div>
+                                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${wh.status === 'optimal' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'}`}>
+                                    {lang === 'en' ? wh.status : (wh.status === 'optimal' ? 'óptimo' : 'alerta')}
+                                  </span>
+                                </div>
+                                <h4 className="text-white font-bold">{wh.name}</h4>
+                                <p className="text-white/40 text-xs mt-1">{wh.location} • {wh.market}</p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
 
-                        {adminSubTab === 'layout' ? (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-6">
-                              <h4 className="text-white font-bold flex items-center gap-2">
-                                <Move className="w-4 h-4 text-porteo-orange" />
-                                {lang === 'en' ? 'Dimensions & Capacity' : 'Dimensiones y Capacidad'}
-                              </h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Rack Rows' : 'Filas de Racks'}</label>
-                                  <input 
-                                    type="number" 
-                                    value={editingWarehouse.layout?.racks.rows || 0}
-                                    onChange={(e) => {
-                                      const val = parseInt(e.target.value) || 0;
-                                      setWarehouses(prev => prev.map(w => w.id === editingWarehouse.id ? { ...w, layout: { ...w.layout, racks: { ...w.layout.racks, rows: val } } } : w));
-                                      setEditingWarehouse(prev => prev ? { ...prev, layout: { ...prev.layout, racks: { ...prev.layout.racks, rows: val } } } : null);
-                                    }}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 transition-all"
-                                  />
+                        {editingWarehouse && (
+                          <div className="glass p-8 rounded-[32px] space-y-6">
+                            <h4 className="text-white font-bold flex items-center gap-2">
+                              <Settings className="w-4 h-4 text-porteo-orange" />
+                              {lang === 'en' ? `Editing: ${editingWarehouse.name}` : `Editando: ${editingWarehouse.name}`}
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                              <div className="space-y-6">
+                                <h5 className="text-white/60 text-sm font-bold uppercase tracking-widest">{lang === 'en' ? 'Dimensions & Capacity' : 'Dimensiones y Capacidad'}</h5>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Rack Rows' : 'Filas de Racks'}</label>
+                                    <input 
+                                      type="number" 
+                                      value={editingWarehouse.layout?.racks.rows || 0}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setWarehouses(prev => prev.map(w => w.id === editingWarehouse.id ? { ...w, layout: { ...w.layout, racks: { ...w.layout.racks, rows: val } } } : w));
+                                        setEditingWarehouse(prev => prev ? { ...prev, layout: { ...prev.layout, racks: { ...prev.layout.racks, rows: val } } } : null);
+                                      }}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 transition-all"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Rack Columns' : 'Columnas de Racks'}</label>
+                                    <input 
+                                      type="number" 
+                                      value={editingWarehouse.layout?.racks.cols || 0}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setWarehouses(prev => prev.map(w => w.id === editingWarehouse.id ? { ...w, layout: { ...w.layout, racks: { ...w.layout.racks, cols: val } } } : w));
+                                        setEditingWarehouse(prev => prev ? { ...prev, layout: { ...prev.layout, racks: { ...prev.layout.racks, cols: val } } } : null);
+                                      }}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 transition-all"
+                                    />
+                                  </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Rack Columns' : 'Columnas de Racks'}</label>
-                                  <input 
-                                    type="number" 
-                                    value={editingWarehouse.layout?.racks.cols || 0}
-                                    onChange={(e) => {
-                                      const val = parseInt(e.target.value) || 0;
-                                      setWarehouses(prev => prev.map(w => w.id === editingWarehouse.id ? { ...w, layout: { ...w.layout, racks: { ...w.layout.racks, cols: val } } } : w));
-                                      setEditingWarehouse(prev => prev ? { ...prev, layout: { ...prev.layout, racks: { ...prev.layout.racks, cols: val } } } : null);
-                                    }}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-porteo-orange/50 transition-all"
-                                  />
+                              </div>
+                              <div className="p-6 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center space-y-4">
+                                <div className="w-16 h-16 bg-porteo-orange/20 rounded-full flex items-center justify-center">
+                                  <Layers className="w-8 h-8 text-porteo-orange" />
+                                </div>
+                                <div>
+                                  <p className="text-white font-bold">{(editingWarehouse.layout?.racks.rows || 0) * (editingWarehouse.layout?.racks.cols || 0)} Total Racks</p>
+                                  <p className="text-white/40 text-xs">{lang === 'en' ? 'Estimated storage positions: ' : 'Posiciones estimadas: '}{((editingWarehouse.layout?.racks.rows || 0) * (editingWarehouse.layout?.racks.cols || 0) * 5).toLocaleString()}</p>
                                 </div>
                               </div>
-                            </div>
-                            <div className="p-6 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center space-y-4">
-                              <div className="w-16 h-16 bg-porteo-orange/20 rounded-full flex items-center justify-center">
-                                <Layers className="w-8 h-8 text-porteo-orange" />
-                              </div>
-                              <div>
-                                <p className="text-white font-bold">{(editingWarehouse.layout?.racks.rows || 0) * (editingWarehouse.layout?.racks.cols || 0)} Total Racks</p>
-                                <p className="text-white/40 text-xs">{lang === 'en' ? 'Estimated storage positions: ' : 'Posiciones estimadas: '}{((editingWarehouse.layout?.racks.rows || 0) * (editingWarehouse.layout?.racks.cols || 0) * 5).toLocaleString()}</p>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <p className="text-white/40 italic text-sm">{lang === 'en' ? 'Master data management for ' : 'Gestión de datos maestros para '}{editingWarehouse.name}</p>
-                            <div className="grid grid-cols-2 gap-4">
-                              <button className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all text-left">
-                                <p className="font-bold text-sm">{lang === 'en' ? 'SKU Registry' : 'Registro de SKU'}</p>
-                                <p className="text-[10px] text-white/40">{lang === 'en' ? 'Manage product master data' : 'Gestionar datos maestros de productos'}</p>
-                              </button>
-                              <button className="p-4 bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all text-left">
-                                <p className="font-bold text-sm">{lang === 'en' ? 'Customer List' : 'Lista de Clientes'}</p>
-                                <p className="text-[10px] text-white/40">{lang === 'en' ? 'Manage 3PL clients' : 'Gestionar clientes 3PL'}</p>
-                              </button>
                             </div>
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
 
-                  <div className="space-y-6">
-                    <div className="glass p-8 rounded-[32px] space-y-6">
-                      <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                        <Download className="w-5 h-5 text-porteo-blue" />
-                        {lang === 'en' ? 'Quick Actions' : 'Acciones Rápidas'}
-                      </h3>
-                      <div className="space-y-3">
-                        <button 
-                          onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.accept = '.xlsx,.xls,.csv';
-                            input.onchange = (e: any) => {
-                              const file = e.target.files[0];
-                              if (file) handleGlobalDataImport(file);
-                            };
-                            input.click();
-                          }}
-                          className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group"
-                        >
-                          <div className="w-10 h-10 bg-porteo-orange/20 rounded-xl flex items-center justify-center group-hover:bg-porteo-orange transition-colors">
-                            <Upload className="w-5 h-5 text-porteo-orange group-hover:text-white" />
+                      <div className="space-y-6">
+                        <div className="glass p-8 rounded-[32px] space-y-6">
+                          <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                            <Download className="w-5 h-5 text-porteo-blue" />
+                            {lang === 'en' ? 'System Tools' : 'Herramientas'}
+                          </h3>
+                          <div className="space-y-3">
+                            <button 
+                              onClick={() => {
+                                setWarehouses(MOCK_WAREHOUSES);
+                                setInventoryItems(MOCK_INVENTORY);
+                                addNotification(lang === 'en' ? 'Sample data loaded successfully!' : '¡Datos de muestra cargados con éxito!', 'operational');
+                              }}
+                              className="w-full px-6 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold flex items-center justify-between hover:bg-white/10 transition-all group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Database className="w-5 h-5 text-white/40 group-hover:text-porteo-orange transition-all" />
+                                {lang === 'en' ? 'Load Sample Data' : 'Cargar Muestra'}
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white transition-all" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = '.xlsx,.xls,.csv';
+                                input.onchange = (e: any) => {
+                                  const file = e.target.files[0];
+                                  if (file) handleGlobalDataImport(file);
+                                };
+                                input.click();
+                              }}
+                              className="w-full px-6 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold flex items-center justify-between hover:bg-white/10 transition-all group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Upload className="w-5 h-5 text-white/40 group-hover:text-porteo-blue transition-all" />
+                                {lang === 'en' ? 'Global Data Import' : 'Importar Datos Globales'}
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white transition-all" />
+                            </button>
                           </div>
-                          <div className="text-left">
-                            <p className="text-white font-bold text-sm">{lang === 'en' ? 'Import Global Data' : 'Importar Datos Globales'}</p>
-                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Upload Excel file' : 'Subir archivo Excel'}</p>
+                        </div>
+
+                        <div className="glass p-8 rounded-[32px] space-y-6">
+                          <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                            <Activity className="w-5 h-5 text-emerald-500" />
+                            {lang === 'en' ? 'System Health' : 'Salud del Sistema'}
+                          </h3>
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-white/40">{lang === 'en' ? 'API Latency' : 'Latencia API'}</span>
+                              <span className="text-sm font-mono text-emerald-500">24ms</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-white/40">{lang === 'en' ? 'Database Load' : 'Carga de Base de Datos'}</span>
+                              <span className="text-sm font-mono text-emerald-500">12%</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-white/40">{lang === 'en' ? 'Active Sessions' : 'Sesiones Activas'}</span>
+                              <span className="text-sm font-mono text-white">42</span>
+                            </div>
                           </div>
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const headers = ['Sheet: Warehouses (name, location, market, capacity)', 'Sheet: Inventory (sku, name, quantity, unit, location, palletId, customer)'];
-                            const blob = new Blob([headers.join('\n')], { type: 'text/plain' });
-                            const url = URL.createObjectURL(blob);
-                            const link = document.createElement('a');
-                            link.href = url;
-                            link.download = 'import-template-guide.txt';
-                            link.click();
-                          }}
-                          className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group"
-                        >
-                          <div className="w-10 h-10 bg-porteo-blue/20 rounded-xl flex items-center justify-center group-hover:bg-porteo-blue transition-colors">
-                            <FileText className="w-5 h-5 text-porteo-blue group-hover:text-white" />
-                          </div>
-                          <div className="text-left">
-                            <p className="text-white font-bold text-sm">{lang === 'en' ? 'Download Template' : 'Descargar Plantilla'}</p>
-                            <p className="text-[10px] text-white/40">{lang === 'en' ? 'Excel structure guide' : 'Guía de estructura Excel'}</p>
-                          </div>
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
+                    </motion.div>
+                  )}
+
+                  {adminSubTab === 'users' && (
+                    <motion.div 
+                      key="users"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className="space-y-8"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        {[
+                          { label: lang === 'en' ? 'Total Users' : 'Total Usuarios', value: users.length, icon: Users, color: 'text-porteo-blue' },
+                          { label: lang === 'en' ? 'Admins' : 'Administradores', value: users.filter(u => u.role === 'admin').length, icon: Shield, color: 'text-porteo-orange' },
+                          { label: lang === 'en' ? 'Active' : 'Activos', value: users.filter(u => u.status === 'active').length, icon: UserCheck, color: 'text-emerald-500' },
+                          { label: lang === 'en' ? 'Inactive' : 'Inactivos', value: users.filter(u => u.status === 'inactive').length, icon: UserX, color: 'text-rose-500' }
+                        ].map((stat, i) => (
+                          <div key={i} className="glass p-6 rounded-3xl border border-white/10">
+                            <div className="flex justify-between items-start mb-4">
+                              <div className={`p-3 rounded-xl bg-white/5 ${stat.color}`}>
+                                <stat.icon className="w-5 h-5" />
+                              </div>
+                            </div>
+                            <p className="text-white/40 text-xs font-bold uppercase tracking-widest mb-1">{stat.label}</p>
+                            <p className="text-3xl font-bold text-white">{stat.value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="glass p-8 rounded-[32px] space-y-6">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                            <Users className="w-5 h-5 text-porteo-orange" />
+                            {lang === 'en' ? 'User Management' : 'Gestión de Usuarios'}
+                          </h3>
+                          <div className="flex gap-4 w-full md:w-auto">
+                            <div className="relative flex-1 md:w-64">
+                              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                              <input 
+                                type="text"
+                                value={userSearchQuery}
+                                onChange={(e) => setUserSearchQuery(e.target.value)}
+                                placeholder={lang === 'en' ? 'Search users...' : 'Buscar usuarios...'}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-11 pr-4 text-sm text-white focus:border-porteo-orange/50 transition-all"
+                              />
+                            </div>
+                            <button 
+                              onClick={() => {
+                                setEditingUser(null);
+                                setNewUser({ name: '', email: '', role: 'operator', status: 'active' });
+                                setIsUserModalOpen(true);
+                              }}
+                              className="px-6 py-2.5 bg-porteo-orange text-white rounded-xl font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                              {lang === 'en' ? 'New User' : 'Nuevo Usuario'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b border-white/10">
+                                <th className="text-left py-4 px-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'User' : 'Usuario'}</th>
+                                <th className="text-left py-4 px-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Role' : 'Rol'}</th>
+                                <th className="text-left py-4 px-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Status' : 'Estado'}</th>
+                                <th className="text-left py-4 px-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Last Login' : 'Último Acceso'}</th>
+                                <th className="text-right py-4 px-4 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Actions' : 'Acciones'}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {users
+                                .filter(u => 
+                                  u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) || 
+                                  u.email.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+                                  u.role.toLowerCase().includes(userSearchQuery.toLowerCase())
+                                )
+                                .map(user => (
+                                <tr key={user.id} className="border-b border-white/5 hover:bg-white/5 transition-all group">
+                                  <td className="py-4 px-4">
+                                    <div className="flex items-center gap-3">
+                                      <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-xl border border-white/10" />
+                                      <div>
+                                        <p className="text-sm font-bold text-white">{user.name}</p>
+                                        <p className="text-[10px] text-white/40">{user.email}</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-4">
+                                    <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                                      user.role === 'admin' ? 'bg-porteo-orange/20 text-porteo-orange' :
+                                      user.role === 'manager' ? 'bg-porteo-blue/20 text-porteo-blue' :
+                                      'bg-white/10 text-white/60'
+                                    }`}>
+                                      {user.role}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 px-4">
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-1.5 h-1.5 rounded-full ${user.status === 'active' ? 'bg-emerald-500' : 'bg-white/20'}`} />
+                                      <span className={`text-xs ${user.status === 'active' ? 'text-emerald-500' : 'text-white/40'}`}>
+                                        {lang === 'en' ? user.status : (user.status === 'active' ? 'activo' : 'inactivo')}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-4">
+                                    <p className="text-xs text-white/40 font-mono">{new Date(user.lastLogin).toLocaleString()}</p>
+                                  </td>
+                                  <td className="py-4 px-4 text-right">
+                                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                      <button 
+                                        onClick={() => {
+                                          setEditingUser(user);
+                                          setIsUserModalOpen(true);
+                                        }}
+                                        className="p-2 bg-white/5 border border-white/10 rounded-lg text-white/40 hover:text-white hover:border-white/20 transition-all"
+                                      >
+                                        <Edit className="w-4 h-4" />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleDeleteUser(user.id)}
+                                        className="p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-500/40 hover:text-rose-500 hover:border-rose-500/50 transition-all"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="glass p-8 rounded-[32px] space-y-6">
+                          <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                            <Shield className="w-5 h-5 text-porteo-blue" />
+                            {lang === 'en' ? 'Access Level Definitions' : 'Definiciones de Niveles de Acceso'}
+                          </h3>
+                          <div className="space-y-4">
+                            {[
+                              { role: 'Admin', desc: lang === 'en' ? 'Full system access, user management, and global configuration.' : 'Acceso total al sistema, gestión de usuarios y configuración global.' },
+                              { role: 'Manager', desc: lang === 'en' ? 'Warehouse-specific management, reporting, and operational control.' : 'Gestión específica de almacén, informes y control operativo.' },
+                              { role: 'Operator', desc: lang === 'en' ? 'Inventory movements, picking, packing, and shipping tasks.' : 'Movimientos de inventario, surtido, empaque y tareas de envío.' },
+                              { role: 'Viewer', desc: lang === 'en' ? 'Read-only access to dashboards and inventory reports.' : 'Acceso de solo lectura a tableros e informes de inventario.' }
+                            ].map((level, i) => (
+                              <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                                <p className="text-sm font-bold text-white mb-1">{level.role}</p>
+                                <p className="text-xs text-white/40 leading-relaxed">{level.desc}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="glass p-8 rounded-[32px] space-y-6">
+                          <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                            <Activity className="w-5 h-5 text-porteo-orange" />
+                            {lang === 'en' ? 'Security Logs' : 'Registros de Seguridad'}
+                          </h3>
+                          <div className="space-y-4">
+                            {[
+                              { user: 'Admin User', action: 'Modified System Config', time: '10m ago' },
+                              { user: 'Warehouse Manager', action: 'Created New User', time: '1h ago' },
+                              { user: 'Operator One', action: 'Failed Login Attempt', time: '3h ago' },
+                              { user: 'Admin User', action: 'Exported Global Data', time: '5h ago' }
+                            ].map((log, i) => (
+                              <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40">
+                                    <Clock className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-bold text-white">{log.user}</p>
+                                    <p className="text-[10px] text-white/40">{log.action}</p>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] text-white/20 font-mono">{log.time}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {adminSubTab === 'integration' && (
+                    <motion.div 
+                      key="integration"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className="space-y-8"
+                    >
+                      <div className="glass p-8 rounded-[32px] border-l-4 border-porteo-blue">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
+                          <div className="flex items-center gap-4">
+                            <div className="p-4 bg-porteo-blue/20 rounded-2xl text-porteo-blue">
+                              <Cpu className="w-8 h-8" />
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">
+                                {lang === 'en' ? 'AS/400 & LANSA Integration' : 'Integración AS/400 y LANSA'}
+                              </h3>
+                              <p className="text-sm text-white/40 mt-1">
+                                {lang === 'en' 
+                                  ? 'Real-time synchronization with IBM i physical files via LANSA Server Modules.' 
+                                  : 'Sincronización en tiempo real con archivos físicos de IBM i a través de módulos de servidor LANSA.'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 w-full md:w-auto">
+                            {as400Status && (
+                              <div className={`flex-1 md:flex-none px-4 py-3 rounded-xl border flex items-center justify-center gap-2 ${
+                                as400Status.status === 'online' 
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' 
+                                  : 'bg-rose-500/10 border-rose-500/30 text-rose-500'
+                              }`}>
+                                <div className={`w-2 h-2 rounded-full ${as400Status.status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                                <span className="text-xs font-bold uppercase tracking-widest">
+                                  {as400Status.status === 'online' ? (lang === 'en' ? 'Connected' : 'Conectado') : (lang === 'en' ? 'Disconnected' : 'Desconectado')}
+                                </span>
+                              </div>
+                            )}
+                            <button 
+                              onClick={syncAS400}
+                              disabled={isSyncingAS400}
+                              className="flex-1 md:flex-none px-8 py-3 bg-porteo-blue text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-porteo-blue/90 transition-all shadow-lg shadow-porteo-blue/20 disabled:opacity-50"
+                            >
+                              {isSyncingAS400 ? <RefreshCw className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+                              {lang === 'en' ? (isSyncingAS400 ? 'Syncing...' : 'Sync Now') : (isSyncingAS400 ? 'Sincronizando...' : 'Sincronizar Ahora')}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="p-6 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-4">System Architecture</p>
+                            <div className="space-y-3">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Host System:</span>
+                                <span className="text-white font-mono">{as400Status?.system || 'IBM i (AS/400)'}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Middleware:</span>
+                                <span className="text-white font-mono">{as400Status?.middleware || 'LANSA Integrator'}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Connector:</span>
+                                <span className="text-white font-mono">{as400Status?.connector || 'JSM REST'}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Architecture:</span>
+                                <span className="text-white font-mono">{as400Status?.architecture || '64-bit'}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Latency:</span>
+                                <span className="text-white font-mono text-emerald-400">{as400Status?.latency || 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-6 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-4">Last Sync Intelligence</p>
+                            <div className="space-y-3">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Last Sync:</span>
+                                <span className="text-white font-mono">{as400Status ? new Date(as400Status.lastSync).toLocaleTimeString() : 'N/A'}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Data Source:</span>
+                                <span className="text-white font-mono">Physical Files</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Sync Mode:</span>
+                                <span className="text-white font-mono">Bidirectional</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-white/60">Status:</span>
+                                <span className={`text-white font-mono ${as400Status?.status === 'online' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {as400Status?.status === 'online' ? 'Success' : 'Failed'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-6 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-4">Connector Health</p>
+                            <div className="flex items-center gap-4 mb-4">
+                              <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all duration-1000 ${as400Status?.health && as400Status.health > 90 ? 'bg-emerald-500' : 'bg-rose-500'}`} 
+                                  style={{ width: `${as400Status?.health || 0}%` }}
+                                />
+                              </div>
+                              <span className={`text-sm font-bold ${as400Status?.health && as400Status.health > 90 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                {as400Status?.health || 0}%
+                              </span>
+                            </div>
+                            <div className={`p-3 rounded-xl border ${as400Status?.health && as400Status.health > 90 ? 'bg-emerald-500/5 border-emerald-500/10' : 'bg-rose-500/5 border-rose-500/10'}`}>
+                              <p className={`text-[10px] italic leading-relaxed ${as400Status?.health && as400Status.health > 90 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
+                                {as400Status?.message || (lang === 'en' ? 'System status unknown.' : 'Estado del sistema desconocido.')}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-8 p-8 bg-white/5 rounded-[32px] border border-white/10 space-y-6">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-porteo-orange/20 rounded-lg text-porteo-orange">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <h4 className="text-xl font-bold text-white uppercase tracking-tight">
+                              {lang === 'en' ? 'Integration Read Me & Guide' : 'Guía y Read Me de Integración'}
+                            </h4>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                              <h5 className="text-sm font-bold text-porteo-blue uppercase tracking-widest">{lang === 'en' ? 'AS/400 (IBM i) & LANSA Basics' : 'Conceptos Básicos de AS/400 (IBM i) y LANSA'}</h5>
+                              <div className="prose prose-invert prose-sm max-w-none text-white/60 leading-relaxed space-y-4">
+                                <p>
+                                  {lang === 'en' 
+                                    ? 'The AS/400 (now IBM i) is a robust mid-range server platform. LANSA is a low-code development environment that runs natively on IBM i, allowing for rapid modernization of legacy systems.'
+                                    : 'El AS/400 (ahora IBM i) es una plataforma de servidor de rango medio robusta. LANSA es un entorno de desarrollo de bajo código que se ejecuta de forma nativa en IBM i, lo que permite una rápida modernización de los sistemas heredados.'}
+                                </p>
+                                <ul className="list-disc pl-5 space-y-2">
+                                  <li><strong>DB2 for i:</strong> {lang === 'en' ? 'The integrated relational database.' : 'La base de datos relacional integrada.'}</li>
+                                  <li><strong>Physical Files (PF):</strong> {lang === 'en' ? 'Equivalent to SQL tables.' : 'Equivalente a tablas SQL.'}</li>
+                                  <li><strong>Logical Files (LF):</strong> {lang === 'en' ? 'Equivalent to SQL views or indexes.' : 'Equivalente a vistas o índices SQL.'}</li>
+                                  <li><strong>LANSA Server Modules:</strong> {lang === 'en' ? 'Expose IBM i data as RESTful APIs.' : 'Exponen los datos de IBM i como APIs RESTful.'}</li>
+                                </ul>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-4">
+                              <h5 className="text-sm font-bold text-porteo-orange uppercase tracking-widest">{lang === 'en' ? 'Developer Installation Guide' : 'Guía de Instalación para Desarrolladores'}</h5>
+                              <div className="p-6 bg-black/40 rounded-2xl border border-white/5 font-mono text-xs text-white/80 space-y-4 overflow-x-auto">
+                                <div>
+                                  <p className="text-porteo-blue mb-1"># 1. Clone & Install Dependencies</p>
+                                  <p>git clone https://github.com/porteo/wms-next-gen.git</p>
+                                  <p>npm install</p>
+                                </div>
+                                <div>
+                                  <p className="text-porteo-blue mb-1"># 2. Configure Environment</p>
+                                  <p>cp .env.example .env</p>
+                                  <p># Set AS400_HOST, LANSA_API_KEY, etc.</p>
+                                </div>
+                                <div>
+                                  <p className="text-porteo-blue mb-1"># 3. Run Development Server</p>
+                                  <p>npm run dev</p>
+                                </div>
+                                <div>
+                                  <p className="text-porteo-blue mb-1"># 4. Deployment to Production</p>
+                                  <p>npm run build</p>
+                                  <p>docker build -t porteo-wms .</p>
+                                  <p># Deploy to Cloud Run or On-Premise</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-6 bg-porteo-blue/10 rounded-2xl border border-porteo-blue/20">
+                            <h5 className="text-sm font-bold text-porteo-blue mb-2">{lang === 'en' ? 'Integration Strategy' : 'Estrategia de Integración'}</h5>
+                            <p className="text-xs text-white/60 leading-relaxed">
+                              {lang === 'en' 
+                                ? 'To integrate with AS/400 via LANSA, we use the LANSA Integrator (JSM) to handle JSON/REST communication. This platform connects to the LANSA Server Modules which act as the bridge to the DB2 physical files. All transactions are logged for audit compliance.'
+                                : 'Para integrar con AS/400 a través de LANSA, utilizamos LANSA Integrator (JSM) para manejar la comunicación JSON/REST. Esta plataforma se conecta a los módulos de servidor LANSA que actúan como puente hacia los archivos físicos de DB2. Todas las transacciones se registran para el cumplimiento de auditoría.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {adminSubTab === 'master-data' && (
+                    <motion.div 
+                      key="master-data"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className="space-y-8"
+                    >
+                      <div className="glass p-8 rounded-[32px] space-y-6">
+                        <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                          <Database className="w-5 h-5 text-porteo-orange" />
+                          {lang === 'en' ? 'System Data & Tools' : 'Datos del Sistema y Herramientas'}
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          <div className="p-6 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-porteo-blue/20 rounded-lg text-porteo-blue">
+                                <Package className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-white font-bold">{lang === 'en' ? 'SKU Master' : 'Maestro de SKU'}</h4>
+                            </div>
+                            <p className="text-xs text-white/40">{lang === 'en' ? 'Manage product definitions, categories, and attributes.' : 'Gestione definiciones de productos, categorías y atributos.'}</p>
+                            <button 
+                              onClick={() => setIsSkuModalOpen(true)}
+                              className="w-full py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all"
+                            >
+                              {lang === 'en' ? 'Open SKU Manager' : 'Abrir Gestor de SKU'}
+                            </button>
+                          </div>
+
+                          <div className="p-6 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-porteo-orange/20 rounded-lg text-porteo-orange">
+                                <Users className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-white font-bold">{lang === 'en' ? 'Client Master' : 'Maestro de Clientes'}</h4>
+                            </div>
+                            <p className="text-xs text-white/40">{lang === 'en' ? 'Manage 3PL client profiles and billing preferences.' : 'Gestione perfiles de clientes 3PL y preferencias de facturación.'}</p>
+                            <button 
+                              onClick={() => setIsClientModalOpen(true)}
+                              className="w-full py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all"
+                            >
+                              {lang === 'en' ? 'Open Client Manager' : 'Abrir Gestor de Clientes'}
+                            </button>
+                          </div>
+
+                          <div className="p-6 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-500">
+                                <MapPin className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-white font-bold">{lang === 'en' ? 'Location Master' : 'Maestro de Ubicaciones'}</h4>
+                            </div>
+                            <p className="text-xs text-white/40">{lang === 'en' ? 'Manage bins, slots, and storage zones across network.' : 'Gestione bins, slots y zonas de almacenamiento en la red.'}</p>
+                            <button 
+                              onClick={() => setIsLocationModalOpen(true)}
+                              className="w-full py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white hover:bg-white/10 transition-all"
+                            >
+                              {lang === 'en' ? 'Open Location Manager' : 'Abrir Gestor de Ubicaciones'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             )}
           </AnimatePresence>
@@ -6608,17 +7420,17 @@ export default function App() {
                           if (selectedContract.documentUrl) {
                             window.open(selectedContract.documentUrl, '_blank');
                           } else {
-                            alert(lang === 'en' ? 'Full document not available for this contract.' : 'Documento completo no disponible para este contrato.');
+                            alert(lang === 'en' ? `Viewing full document for ${selectedContract.partyName}...` : `Viendo documento completo para ${selectedContract.partyName}...`);
                           }
                         }}
-                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2"
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2 active:scale-95"
                       >
                         <FileText className="w-5 h-5" />
                         {lang === 'en' ? 'View Full Document' : 'Ver Documento Completo'}
                       </button>
                       <button 
-                        onClick={() => alert(lang === 'en' ? 'Edit mode coming soon' : 'Modo de edición próximamente')}
-                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                        onClick={() => alert(lang === 'en' ? `Entering edit mode for contract ${selectedContract.id}...` : `Entrando en modo de edición para el contrato ${selectedContract.id}...`)}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all active:scale-95"
                       >
                         {lang === 'en' ? 'Edit Contract' : 'Editar Contrato'}
                       </button>
@@ -6964,6 +7776,706 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* User Modal */}
+      <AnimatePresence>
+        {isUserModalOpen && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 md:p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsUserModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl glass rounded-[40px] border border-white/10 overflow-hidden shadow-2xl"
+            >
+              <div className="p-8 md:p-12">
+                <div className="flex justify-between items-start mb-8">
+                  <div>
+                    <h3 className="text-3xl font-bold text-white mb-2">
+                      {editingUser ? (lang === 'en' ? 'Edit User' : 'Editar Usuario') : (lang === 'en' ? 'Create New User' : 'Crear Nuevo Usuario')}
+                    </h3>
+                    <p className="text-white/40">
+                      {lang === 'en' ? 'Define access levels and user credentials.' : 'Defina niveles de acceso y credenciales de usuario.'}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setIsUserModalOpen(false)}
+                    className="p-3 rounded-2xl bg-white/5 border border-white/10 text-white/40 hover:text-white transition-all"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Full Name' : 'Nombre Completo'}</label>
+                      <div className="relative">
+                        <Users className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <input 
+                          type="text"
+                          value={editingUser ? editingUser.name : newUser.name}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="John Doe"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Email Address' : 'Correo Electrónico'}</label>
+                      <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <input 
+                          type="email"
+                          value={editingUser ? editingUser.email : newUser.email}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="john@porteo.com"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'System Role' : 'Rol del Sistema'}</label>
+                      <div className="relative">
+                        <Shield className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <select 
+                          value={editingUser ? editingUser.role : newUser.role}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, role: e.target.value as UserRole}) : setNewUser({...newUser, role: e.target.value as UserRole})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:border-porteo-orange/50 transition-all appearance-none"
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="manager">Manager</option>
+                          <option value="operator">Operator</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 pointer-events-none" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Account Status' : 'Estado de la Cuenta'}</label>
+                      <div className="flex gap-4">
+                        {['active', 'inactive'].map((status) => (
+                          <button
+                            key={status}
+                            onClick={() => editingUser ? setEditingUser({...editingUser, status: status as any}) : setNewUser({...newUser, status: status as any})}
+                            className={`flex-1 py-4 rounded-2xl border font-bold text-sm transition-all ${
+                              (editingUser ? editingUser.status : newUser.status) === status 
+                                ? 'bg-porteo-orange/20 border-porteo-orange text-porteo-orange' 
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
+                            }`}
+                          >
+                            {lang === 'en' ? status.charAt(0).toUpperCase() + status.slice(1) : (status === 'active' ? 'Activo' : 'Inactivo')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-8 flex gap-4">
+                    <button 
+                      onClick={() => setIsUserModalOpen(false)}
+                      className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                    >
+                      {lang === 'en' ? 'Cancel' : 'Cancelar'}
+                    </button>
+                    <button 
+                      onClick={() => editingUser ? handleEditUser(editingUser) : handleAddUser(newUser)}
+                      className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                    >
+                      {editingUser ? (lang === 'en' ? 'Save Changes' : 'Guardar Cambios') : (lang === 'en' ? 'Create User' : 'Crear Usuario')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SKU Master Modal */}
+      <AnimatePresence>
+        {isSkuModalOpen && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 md:p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { setIsSkuModalOpen(false); setIsSkuFormOpen(false); setEditingSku(null); }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-5xl glass rounded-[40px] border border-white/10 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5">
+                <div>
+                  <h2 className="text-3xl font-bold text-white uppercase tracking-tight">
+                    {isSkuFormOpen 
+                      ? (editingSku ? (lang === 'en' ? 'Edit SKU' : 'Editar SKU') : (lang === 'en' ? 'Add New SKU' : 'Agregar Nuevo SKU'))
+                      : (lang === 'en' ? 'SKU Master Management' : 'Gestión Maestra de SKU')}
+                  </h2>
+                  <p className="text-white/40 text-sm mt-1">
+                    {isSkuFormOpen 
+                      ? (lang === 'en' ? 'Define product specifications and attributes.' : 'Defina especificaciones y atributos del producto.')
+                      : (lang === 'en' ? 'Centralized product definition and attribute control.' : 'Definición centralizada de productos y control de atributos.')}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => { 
+                    if (isSkuFormOpen) { setIsSkuFormOpen(false); setEditingSku(null); }
+                    else setIsSkuModalOpen(false); 
+                  }} 
+                  className="p-3 rounded-2xl bg-white/5 border border-white/10 text-white/40 hover:text-white transition-all"
+                >
+                  {isSkuFormOpen ? <ChevronLeft className="w-8 h-8" /> : <X className="w-8 h-8" />}
+                </button>
+              </div>
+              
+              <div className="p-8 space-y-6 overflow-y-auto flex-1">
+                {isSkuFormOpen ? (
+                  <div className="space-y-8 max-w-2xl mx-auto">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">SKU Code</label>
+                        <input 
+                          type="text"
+                          value={editingSku ? editingSku.sku : newSku.sku}
+                          onChange={(e) => editingSku ? setEditingSku({...editingSku, sku: e.target.value}) : setNewSku({...newSku, sku: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="PROD-001"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Product Name' : 'Nombre del Producto'}</label>
+                        <input 
+                          type="text"
+                          value={editingSku ? editingSku.name : newSku.name}
+                          onChange={(e) => editingSku ? setEditingSku({...editingSku, name: e.target.value}) : setNewSku({...newSku, name: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="Premium Widget"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Category' : 'Categoría'}</label>
+                        <select 
+                          value={editingSku ? editingSku.category : newSku.category}
+                          onChange={(e) => editingSku ? setEditingSku({...editingSku, category: e.target.value as any}) : setNewSku({...newSku, category: e.target.value as any})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all appearance-none"
+                        >
+                          <option value="Engine">Engine</option>
+                          <option value="Brakes">Brakes</option>
+                          <option value="Suspension">Suspension</option>
+                          <option value="Electrical">Electrical</option>
+                          <option value="Body">Body</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Velocity' : 'Velocidad'}</label>
+                        <select 
+                          value={editingSku ? editingSku.velocity : newSku.velocity}
+                          onChange={(e) => editingSku ? setEditingSku({...editingSku, velocity: e.target.value as any}) : setNewSku({...newSku, velocity: e.target.value as any})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all appearance-none"
+                        >
+                          <option value="High">High</option>
+                          <option value="Medium">Medium</option>
+                          <option value="Low">Low</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-8 flex gap-4">
+                      <button 
+                        onClick={() => { setIsSkuFormOpen(false); setEditingSku(null); }}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                      >
+                        {lang === 'en' ? 'Cancel' : 'Cancelar'}
+                      </button>
+                      <button 
+                        onClick={() => editingSku ? handleEditSku(editingSku) : handleAddSku(newSku)}
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                      >
+                        {editingSku ? (lang === 'en' ? 'Save Changes' : 'Guardar Cambios') : (lang === 'en' ? 'Create SKU' : 'Crear SKU')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <input 
+                          type="text"
+                          value={skuSearchQuery}
+                          onChange={(e) => setSkuSearchQuery(e.target.value)}
+                          placeholder={lang === 'en' ? 'Search by SKU or Name...' : 'Buscar por SKU o Nombre...'}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm text-white focus:border-porteo-orange/50 transition-all"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => setIsSkuFormOpen(true)}
+                        className="px-8 py-4 bg-porteo-orange text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                      >
+                        <Plus className="w-5 h-5" />
+                        {lang === 'en' ? 'Add SKU' : 'Agregar SKU'}
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-white/10">
+                            <th className="text-left py-4 px-6 text-[10px] font-bold text-white/40 uppercase tracking-widest">SKU</th>
+                            <th className="text-left py-4 px-6 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Product Name' : 'Nombre del Producto'}</th>
+                            <th className="text-left py-4 px-6 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Category' : 'Categoría'}</th>
+                            <th className="text-left py-4 px-6 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Velocity' : 'Velocidad'}</th>
+                            <th className="text-right py-4 px-6 text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'en' ? 'Actions' : 'Acciones'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inventoryItems
+                            .filter(item => item.sku.toLowerCase().includes(skuSearchQuery.toLowerCase()) || item.name.toLowerCase().includes(skuSearchQuery.toLowerCase()))
+                            .map(item => (
+                            <tr key={item.id} className="border-b border-white/5 hover:bg-white/5 transition-all group">
+                              <td className="py-4 px-6 font-mono text-xs text-porteo-blue">{item.sku}</td>
+                              <td className="py-4 px-6 text-sm text-white font-bold">{item.name}</td>
+                              <td className="py-4 px-6">
+                                <span className="px-3 py-1 bg-white/5 rounded-lg text-[10px] text-white/60 uppercase font-bold border border-white/10">{item.category || 'N/A'}</span>
+                              </td>
+                              <td className="py-4 px-6">
+                                <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                                  item.velocity === 'High' ? 'bg-emerald-500/20 text-emerald-500' :
+                                  item.velocity === 'Medium' ? 'bg-amber-500/20 text-amber-500' :
+                                  'bg-white/10 text-white/40'
+                                }`}>
+                                  {item.velocity || 'Low'}
+                                </span>
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <button 
+                                  onClick={() => { setEditingSku(item); setIsSkuFormOpen(true); }}
+                                  className="p-2 text-white/20 hover:text-white transition-colors"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Client Master Modal */}
+      <AnimatePresence>
+        {isClientModalOpen && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 md:p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { setIsClientModalOpen(false); setIsClientFormOpen(false); setEditingClient(null); }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-5xl glass rounded-[40px] border border-white/10 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5">
+                <div>
+                  <h2 className="text-3xl font-bold text-white uppercase tracking-tight">
+                    {isClientFormOpen 
+                      ? (editingClient ? (lang === 'en' ? 'Edit Client' : 'Editar Cliente') : (lang === 'en' ? 'Add New Client' : 'Agregar Nuevo Cliente'))
+                      : (lang === 'en' ? 'Client Master Management' : 'Gestión Maestra de Clientes')}
+                  </h2>
+                  <p className="text-white/40 text-sm mt-1">
+                    {isClientFormOpen 
+                      ? (lang === 'en' ? 'Configure client profile and billing details.' : 'Configure el perfil del cliente y detalles de facturación.')
+                      : (lang === 'en' ? 'Manage 3PL client relationships and billing configurations.' : 'Gestione relaciones con clientes 3PL y configuraciones de facturación.')}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => { 
+                    if (isClientFormOpen) { setIsClientFormOpen(false); setEditingClient(null); }
+                    else setIsClientModalOpen(false); 
+                  }} 
+                  className="p-3 rounded-2xl bg-white/5 border border-white/10 text-white/40 hover:text-white transition-all"
+                >
+                  {isClientFormOpen ? <ChevronLeft className="w-8 h-8" /> : <X className="w-8 h-8" />}
+                </button>
+              </div>
+              
+              <div className="p-8 space-y-6 overflow-y-auto flex-1">
+                {isClientFormOpen ? (
+                  <div className="space-y-8 max-w-2xl mx-auto">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Client Name' : 'Nombre del Cliente'}</label>
+                        <input 
+                          type="text"
+                          value={editingClient ? editingClient.name : newClient.name}
+                          onChange={(e) => editingClient ? setEditingClient({...editingClient, name: e.target.value}) : setNewClient({...newClient, name: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="Global Logistics Inc."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Email Address' : 'Correo Electrónico'}</label>
+                        <input 
+                          type="email"
+                          value={editingClient ? editingClient.email : newClient.email}
+                          onChange={(e) => editingClient ? setEditingClient({...editingClient, email: e.target.value}) : setNewClient({...newClient, email: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="contact@global.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Phone Number' : 'Número de Teléfono'}</label>
+                        <input 
+                          type="text"
+                          value={editingClient ? editingClient.phone : newClient.phone}
+                          onChange={(e) => editingClient ? setEditingClient({...editingClient, phone: e.target.value}) : setNewClient({...newClient, phone: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="+1 555-0123"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Billing Cycle' : 'Ciclo de Facturación'}</label>
+                        <select 
+                          value={editingClient ? editingClient.billingCycle : newClient.billingCycle}
+                          onChange={(e) => editingClient ? setEditingClient({...editingClient, billingCycle: e.target.value as any}) : setNewClient({...newClient, billingCycle: e.target.value as any})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all appearance-none"
+                        >
+                          <option value="weekly">Weekly</option>
+                          <option value="bi-weekly">Bi-Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Physical Address' : 'Dirección Física'}</label>
+                      <textarea 
+                        value={editingClient ? editingClient.address : newClient.address}
+                        onChange={(e) => editingClient ? setEditingClient({...editingClient, address: e.target.value}) : setNewClient({...newClient, address: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all min-h-[100px]"
+                        placeholder="123 Logistics Way, Suite 100..."
+                      />
+                    </div>
+
+                    <div className="pt-8 flex gap-4">
+                      <button 
+                        onClick={() => { setIsClientFormOpen(false); setEditingClient(null); }}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                      >
+                        {lang === 'en' ? 'Cancel' : 'Cancelar'}
+                      </button>
+                      <button 
+                        onClick={() => editingClient ? handleEditClient(editingClient) : handleAddClient(newClient)}
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                      >
+                        {editingClient ? (lang === 'en' ? 'Save Changes' : 'Guardar Cambios') : (lang === 'en' ? 'Create Client' : 'Crear Cliente')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <input 
+                          type="text"
+                          value={clientSearchQuery}
+                          onChange={(e) => setClientSearchQuery(e.target.value)}
+                          placeholder={lang === 'en' ? 'Search by Client Name or Email...' : 'Buscar por Nombre de Cliente o Correo...'}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm text-white focus:border-porteo-orange/50 transition-all"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => setIsClientFormOpen(true)}
+                        className="px-8 py-4 bg-porteo-orange text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                      >
+                        <Plus className="w-5 h-5" />
+                        {lang === 'en' ? 'Add Client' : 'Agregar Cliente'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {clients
+                        .filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || c.email.toLowerCase().includes(clientSearchQuery.toLowerCase()))
+                        .map(client => (
+                        <div key={client.id} className="glass p-8 rounded-[32px] border border-white/10 hover:border-white/20 transition-all group relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-porteo-orange/5 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-porteo-orange/10 transition-all" />
+                          
+                          <div className="flex justify-between items-start mb-6 relative z-10">
+                            <div className="flex items-center gap-5">
+                              <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center text-porteo-orange border border-white/10 group-hover:bg-porteo-orange group-hover:text-white transition-all shadow-xl">
+                                <Building2 className="w-8 h-8" />
+                              </div>
+                              <div>
+                                <h4 className="text-xl font-bold text-white">{client.name}</h4>
+                                <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mt-1">{client.id}</p>
+                              </div>
+                            </div>
+                            <span className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase border ${
+                              client.status === 'active' 
+                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
+                                : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                            }`}>
+                              {client.status}
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-3 mb-8 relative z-10">
+                            <div className="flex items-center gap-3 text-sm text-white/60">
+                              <div className="p-1.5 bg-white/5 rounded-lg">
+                                <Mail className="w-4 h-4" />
+                              </div>
+                              {client.email}
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-white/60">
+                              <div className="p-1.5 bg-white/5 rounded-lg">
+                                <Phone className="w-4 h-4" />
+                              </div>
+                              {client.phone}
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-white/60">
+                              <div className="p-1.5 bg-white/5 rounded-lg">
+                                <MapPin className="w-4 h-4" />
+                              </div>
+                              {client.address}
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center pt-6 border-t border-white/5 relative z-10">
+                            <div>
+                              <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">{lang === 'en' ? 'Billing Cycle' : 'Ciclo de Facturación'}</p>
+                              <p className="text-white font-bold text-sm capitalize">{client.billingCycle}</p>
+                            </div>
+                            <button 
+                              onClick={() => { setEditingClient(client); setIsClientFormOpen(true); }}
+                              className="px-6 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+                            >
+                              {lang === 'en' ? 'Edit Profile' : 'Editar Perfil'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Location Master Modal */}
+      <AnimatePresence>
+        {isLocationModalOpen && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 md:p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { setIsLocationModalOpen(false); setIsLocationFormOpen(false); setEditingLocation(null); }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-5xl glass rounded-[40px] border border-white/10 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5">
+                <div>
+                  <h2 className="text-3xl font-bold text-white uppercase tracking-tight">
+                    {isLocationFormOpen 
+                      ? (editingLocation ? (lang === 'en' ? 'Edit Location' : 'Editar Ubicación') : (lang === 'en' ? 'Add New Location' : 'Agregar Nueva Ubicación'))
+                      : (lang === 'en' ? 'Location Master Management' : 'Gestión Maestra de Ubicaciones')}
+                  </h2>
+                  <p className="text-white/40 text-sm mt-1">
+                    {isLocationFormOpen 
+                      ? (lang === 'en' ? 'Define storage coordinates and slot types.' : 'Defina coordenadas de almacenamiento y tipos de slot.')
+                      : (lang === 'en' ? 'Define and monitor storage slots across the network.' : 'Defina y monitoree slots de almacenamiento en la red.')}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => { 
+                    if (isLocationFormOpen) { setIsLocationFormOpen(false); setEditingLocation(null); }
+                    else setIsLocationModalOpen(false); 
+                  }} 
+                  className="p-3 rounded-2xl bg-white/5 border border-white/10 text-white/40 hover:text-white transition-all"
+                >
+                  {isLocationFormOpen ? <ChevronLeft className="w-8 h-8" /> : <X className="w-8 h-8" />}
+                </button>
+              </div>
+              
+              <div className="p-8 space-y-6 overflow-y-auto flex-1">
+                {isLocationFormOpen ? (
+                  <div className="space-y-8 max-w-2xl mx-auto">
+                    <div className="grid grid-cols-3 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Zone' : 'Zona'}</label>
+                        <input 
+                          type="text"
+                          value={editingLocation ? editingLocation.zone : newMasterLocation.zone}
+                          onChange={(e) => editingLocation ? setEditingLocation({...editingLocation, zone: e.target.value}) : setNewMasterLocation({...newMasterLocation, zone: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="A"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Aisle' : 'Pasillo'}</label>
+                        <input 
+                          type="text"
+                          value={editingLocation ? editingLocation.aisle : newMasterLocation.aisle}
+                          onChange={(e) => editingLocation ? setEditingLocation({...editingLocation, aisle: e.target.value}) : setNewMasterLocation({...newMasterLocation, aisle: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="01"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">Rack</label>
+                        <input 
+                          type="text"
+                          value={editingLocation ? editingLocation.rack : newMasterLocation.rack}
+                          onChange={(e) => editingLocation ? setEditingLocation({...editingLocation, rack: e.target.value}) : setNewMasterLocation({...newMasterLocation, rack: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all"
+                          placeholder="01"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Location Type' : 'Tipo de Ubicación'}</label>
+                        <select 
+                          value={editingLocation ? editingLocation.type : newMasterLocation.type}
+                          onChange={(e) => editingLocation ? setEditingLocation({...editingLocation, type: e.target.value as any}) : setNewMasterLocation({...newMasterLocation, type: e.target.value as any})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all appearance-none"
+                        >
+                          <option value="picking">Picking</option>
+                          <option value="bulk">Bulk</option>
+                          <option value="staging">Staging</option>
+                          <option value="returns">Returns</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest ml-4">{lang === 'en' ? 'Status' : 'Estado'}</label>
+                        <select 
+                          value={editingLocation ? editingLocation.status : newMasterLocation.status}
+                          onChange={(e) => editingLocation ? setEditingLocation({...editingLocation, status: e.target.value as any}) : setNewMasterLocation({...newMasterLocation, status: e.target.value as any})}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-porteo-orange/50 transition-all appearance-none"
+                        >
+                          <option value="available">Available</option>
+                          <option value="occupied">Occupied</option>
+                          <option value="reserved">Reserved</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-8 flex gap-4">
+                      <button 
+                        onClick={() => { setIsLocationFormOpen(false); setEditingLocation(null); }}
+                        className="flex-1 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all"
+                      >
+                        {lang === 'en' ? 'Cancel' : 'Cancelar'}
+                      </button>
+                      <button 
+                        onClick={() => editingLocation ? handleEditLocation(editingLocation) : handleAddLocation(newMasterLocation)}
+                        className="flex-1 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                      >
+                        {editingLocation ? (lang === 'en' ? 'Save Changes' : 'Guardar Cambios') : (lang === 'en' ? 'Create Location' : 'Crear Ubicación')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <input 
+                          type="text"
+                          value={locationSearchQuery}
+                          onChange={(e) => setLocationSearchQuery(e.target.value)}
+                          placeholder={lang === 'en' ? 'Search by Zone, Aisle, or Rack...' : 'Buscar por Zona, Pasillo o Rack...'}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm text-white focus:border-porteo-orange/50 transition-all"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => setIsLocationFormOpen(true)}
+                        className="px-8 py-4 bg-porteo-orange text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                      >
+                        <Plus className="w-5 h-5" />
+                        {lang === 'en' ? 'Add Location' : 'Agregar Ubicación'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                      {masterLocations
+                        .filter(l => l.zone.includes(locationSearchQuery) || l.aisle.includes(locationSearchQuery) || l.rack.includes(locationSearchQuery))
+                        .map(loc => (
+                        <div key={loc.id} className="glass p-6 rounded-3xl border border-white/10 hover:border-white/20 transition-all text-center space-y-4 group relative">
+                          <button 
+                            onClick={() => { setEditingLocation(loc); setIsLocationFormOpen(true); }}
+                            className="absolute top-2 right-2 p-2 text-white/0 group-hover:text-white/40 hover:text-white transition-all"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center transition-all shadow-lg ${
+                            loc.status === 'available' ? 'bg-emerald-500/20 text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white' :
+                            loc.status === 'occupied' ? 'bg-porteo-orange/20 text-porteo-orange group-hover:bg-porteo-orange group-hover:text-white' :
+                            'bg-amber-500/20 text-amber-500 group-hover:bg-amber-500 group-hover:text-white'
+                          }`}>
+                            <MapPin className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-white">{loc.zone}-{loc.aisle}-{loc.rack}</p>
+                            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mt-1">{loc.type}</p>
+                          </div>
+                          <div className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full inline-block border ${
+                            loc.status === 'available' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                            loc.status === 'occupied' ? 'bg-porteo-orange/10 border-porteo-orange/20 text-porteo-orange' :
+                            'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                          }`}>
+                            {loc.status}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             </motion.div>

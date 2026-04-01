@@ -63,8 +63,8 @@ export const CommercialManagement = ({
 
       <div className="flex-1 glass rounded-[32px] overflow-hidden flex flex-col">
         {activeSubTab === 'pricing' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full">
+            <div className="flex justify-between items-center shrink-0">
               <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Customer Specific Pricing' : 'Precios Específicos por Cliente'}</h3>
               <div className="flex gap-4">
                 <div className="relative">
@@ -76,8 +76,8 @@ export const CommercialManagement = ({
                   />
                 </div>
                 <button 
-                  onClick={() => alert(language === 'en' ? 'Filter options coming soon' : 'Opciones de filtro próximamente')}
-                  className="p-2 bg-white/5 border border-white/10 rounded-xl text-white/60 hover:text-white transition-colors"
+                  onClick={() => alert(language === 'en' ? 'Filter options:\n- By Customer\n- By SKU Category\n- By Discount Range\n- By Contract Status' : 'Opciones de filtro:\n- Por Cliente\n- Por Categoría de SKU\n- Por Rango de Descuento\n- Por Estado de Contrato')}
+                  className="p-2 bg-white/5 border border-white/10 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all active:scale-90"
                 >
                   <Filter className="w-4 h-4" />
                 </button>
@@ -118,7 +118,7 @@ export const CommercialManagement = ({
         )}
 
         {activeSubTab === 'rebates' && (
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar h-full">
             <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Supplier Rebate Tracking' : 'Seguimiento de Rebates de Proveedores'}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {MOCK_REBATES.map((r, i) => (
