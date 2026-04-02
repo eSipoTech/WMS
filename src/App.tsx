@@ -4,11 +4,25 @@ import { useAuthStore } from './store';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
+import { ControlTower } from './components/ControlTower';
 import { WMS } from './components/WMS';
 import { CRM } from './components/CRM';
 import { Fleet } from './components/Fleet';
 import { AI } from './components/AI';
 import { Chat } from './components/Chat';
+import { AdminPanel } from './components/AdminPanel';
+import { WarehouseOperations } from './components/WarehouseOperations';
+import { Warehouse3D } from './components/Warehouse3D';
+import { PatioManagement } from './components/PatioManagement';
+import { AssemblyLine } from './components/AssemblyLine';
+import { ThreePLWorkflow } from './components/ThreePLWorkflow';
+import { CommercialManagement } from './components/CommercialManagement';
+import { TPLBilling } from './components/TPLBilling';
+import { AdvancedLogistics } from './components/AdvancedLogistics';
+import { IntelligenceAgents } from './components/IntelligenceAgents';
+import { StrategicResearch } from './components/StrategicResearch';
+import { Financials } from './components/Financials';
+import { Analytics } from './components/Analytics';
 import { 
   Settings, 
   ShieldCheck, 
@@ -26,205 +40,66 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { 
+  MOCK_WAREHOUSES, 
+  MOCK_INVENTORY_MEXICO, 
+  MOCK_INVENTORY_USA,
+  MOCK_PATIO, 
+  MOCK_NOTIFICATIONS 
+} from './constants';
+import { 
+  Warehouse, 
+  InventoryItem, 
+  PatioSlot, 
+  WMSNotification 
+} from './types';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const AdminPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'warehouses' | 'users' | 'integration'>('warehouses');
-  const [as400Status, setAs400Status] = useState<any>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/integration/as400/status')
-      .then(res => res.json())
-      .then(setAs400Status)
-      .catch(() => {});
-  }, []);
-
-  const handleSync = async () => {
-    setIsSyncing(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      const res = await fetch('/api/integration/as400/status');
-      if (res.ok) setAs400Status(await res.json());
-      toast.success('AS/400 Synchronization complete');
-    } catch (error) {
-      toast.error('Sync failed');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold text-white tracking-tight">Admin Control</h1>
-          <p className="text-white/60 mt-2">System Configuration & Global Settings</p>
-        </div>
-      </div>
-
-      <div className="flex gap-2 p-1 bg-white/5 rounded-2xl w-fit border border-white/10">
-        {[
-          { id: 'warehouses', label: 'Warehouses', icon: Globe },
-          { id: 'users', label: 'User Management', icon: ShieldCheck },
-          { id: 'integration', label: 'AS/400 Integration', icon: Database },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
-              activeTab === tab.id 
-                ? 'bg-white/10 text-white shadow-inner' 
-                : 'text-white/40 hover:text-white/60'
-            }`}
-          >
-            <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-porteo-blue' : ''}`} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          className="glass rounded-3xl border border-white/10 p-8"
-        >
-          {activeTab === 'integration' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-              <div className="space-y-8">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-bold text-white">AS/400 Status</h3>
-                  <button 
-                    onClick={handleSync}
-                    disabled={isSyncing}
-                    className="p-3 glass rounded-xl text-porteo-blue hover:bg-white/10 transition-all border border-white/10 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-6">
-                  {[
-                    { label: 'System', value: as400Status?.system || 'IBM i (Power9)', icon: Cpu },
-                    { label: 'Middleware', value: as400Status?.middleware || 'LANSA Integrator v15.2', icon: Database },
-                    { label: 'Latency', value: as400Status?.latency || '45ms', icon: Activity },
-                    { label: 'Health', value: `${as400Status?.health || 98}%`, icon: Zap },
-                  ].map((item, i) => (
-                    <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <div className="flex items-center gap-2 text-white/40 mb-2">
-                        <item.icon className="w-4 h-4" />
-                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{item.label}</p>
-                      </div>
-                      <p className="text-white font-bold">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="p-6 bg-porteo-blue/10 rounded-2xl border border-porteo-blue/20">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="p-2 bg-porteo-blue/20 rounded-lg">
-                      <Zap className="w-5 h-5 text-porteo-blue" />
-                    </div>
-                    <h4 className="text-sm font-bold text-white">Connector Health</h4>
-                  </div>
-                  <p className="text-sm text-white/60 leading-relaxed">
-                    {as400Status?.message || 'Optimal performance detected in LANSA Server Modules. No bottlenecks found in JSM transaction logs.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <h3 className="text-xl font-bold text-white">Integration Guide</h3>
-                <div className="space-y-4">
-                  {[
-                    'Ensure LANSA JSM is running on port 4545',
-                    'Verify REST service mapping in LANSA IDE',
-                    'Check transaction logs for 500 errors',
-                    'Maintain physical file locks during sync'
-                  ].map((step, i) => (
-                    <div key={i} className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/5">
-                      <div className="w-6 h-6 rounded-full bg-porteo-blue/20 text-porteo-blue flex items-center justify-center text-xs font-bold">
-                        {i + 1}
-                      </div>
-                      <span className="text-sm text-white/60 font-medium">{step}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'warehouses' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white">Global Warehouses</h3>
-                <button className="bg-porteo-blue px-4 py-2 rounded-xl text-white text-sm font-bold flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Node
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {[
-                  { name: 'MX-CDMX Hub', location: 'Mexico City, MX', status: 'Online', capacity: '85%' },
-                  { name: 'USA-TX Hub', location: 'Austin, TX', status: 'Online', capacity: '42%' },
-                ].map((wh, i) => (
-                  <div key={i} className="p-6 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-all group">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-porteo-blue/10 rounded-xl">
-                        <Globe className="w-6 h-6 text-porteo-blue" />
-                      </div>
-                      <span className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest bg-emerald-400/10 px-2 py-1 rounded-full">
-                        {wh.status}
-                      </span>
-                    </div>
-                    <h4 className="text-lg font-bold text-white">{wh.name}</h4>
-                    <p className="text-sm text-white/40 mb-6">{wh.location}</p>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs font-bold">
-                        <span className="text-white/40">Capacity</span>
-                        <span className="text-white">{wh.capacity}</span>
-                      </div>
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-porteo-blue w-[85%]" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  );
-};
-
-const Finance: React.FC = () => (
-  <div className="space-y-8">
-    <div>
-      <h1 className="text-4xl font-bold text-white tracking-tight">Finance</h1>
-      <p className="text-white/60 mt-2">Invoice Validation & Cost Control</p>
-    </div>
-    <div className="glass p-12 rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center">
-      <div className="p-6 bg-porteo-orange/10 rounded-full mb-6">
-        <Database className="w-12 h-12 text-porteo-orange" />
-      </div>
-      <h3 className="text-2xl font-bold text-white mb-2">Finance Module MVP</h3>
-      <p className="text-white/40 max-w-md">
-        This module is currently in development. It will handle invoice validation, tax calculations for MX/USA, and automated cost reporting.
-      </p>
-    </div>
-  </div>
-);
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [lang, setLang] = useState<'en' | 'es'>('es');
+  const [market, setMarket] = useState<'USA' | 'MEXICO'>('MEXICO');
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(MOCK_INVENTORY_MEXICO);
+  const [patioSlots, setPatioSlots] = useState<PatioSlot[]>(MOCK_PATIO);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState(MOCK_WAREHOUSES[0].id);
+  const [notifications, setNotifications] = useState<WMSNotification[]>(MOCK_NOTIFICATIONS);
+
+  useEffect(() => {
+    if (market === 'MEXICO') {
+      setLang('es');
+      setInventoryItems(MOCK_INVENTORY_MEXICO);
+      const mexWh = MOCK_WAREHOUSES.find(w => w.market === 'MEXICO');
+      if (mexWh) setSelectedWarehouseId(mexWh.id);
+    } else {
+      setLang('en');
+      setInventoryItems(MOCK_INVENTORY_USA);
+      const usaWh = MOCK_WAREHOUSES.find(w => w.market === 'USA');
+      if (usaWh) setSelectedWarehouseId(usaWh.id);
+    }
+  }, [market]);
+
+  const addNotification = (message: string, type: 'operational' | 'alert' | 'success' | 'info' = 'info') => {
+    const newNotification: WMSNotification = {
+      id: Math.random().toString(36).substr(2, 9),
+      title: { en: message, es: message },
+      description: { en: message, es: message },
+      type: type as any,
+      timestamp: new Date().toLocaleTimeString(),
+      read: false
+    };
+    setNotifications(prev => [newNotification, ...prev]);
+    toast[type === 'alert' ? 'error' : type === 'operational' ? 'info' : type](message);
+  };
+
+  const setMarketAndLang = (m: 'USA' | 'MEXICO') => {
+    setMarket(m);
+    setLang(m === 'MEXICO' ? 'es' : 'en');
+  };
+
   const user = useAuthStore((state) => state.user);
 
   if (!user) {
@@ -237,13 +112,83 @@ export default function App() {
   }
 
   const renderContent = () => {
+    if (activeTab.startsWith('wms')) return (
+      <WMS 
+        activeTab={activeTab}
+        lang={lang}
+        market={market}
+        inventoryItems={inventoryItems}
+        setInventoryItems={setInventoryItems}
+        patioSlots={patioSlots}
+        addNotification={addNotification}
+        warehouses={warehouses}
+        selectedWarehouseId={selectedWarehouseId}
+        onWarehouseChange={setSelectedWarehouseId}
+      />
+    );
+
+    // Commercial Sub-tabs
+    if (activeTab === 'crm') return <CRM lang={lang} market={market} />;
+    if (activeTab === 'comm-mgmt') return <CommercialManagement lang={lang} market={market} />;
+    if (activeTab === 'tpl-billing') return <TPLBilling lang={lang} market={market} warehouse={warehouses.find(w => w.id === selectedWarehouseId)} addNotification={addNotification} />;
+
+    // Fleet Sub-tabs
+    if (activeTab === 'fleet-tracking') return <Fleet activeTab="fleet-tracking" />;
+    if (activeTab === 'fleet-routes') return <Fleet activeTab="fleet-routes" />;
+    if (activeTab === 'adv-logistics') return <AdvancedLogistics lang={lang} warehouse={warehouses.find(w => w.id === selectedWarehouseId)} addNotification={addNotification} />;
+
+    // AI Sub-tabs
+    if (activeTab === 'ai-platform') return <AI lang={lang} />;
+    if (activeTab === 'intel-agents') return <IntelligenceAgents lang={lang} />;
+    if (activeTab === 'strategic-res') return <StrategicResearch lang={lang} market={market} setActiveTab={setActiveTab} addNotification={addNotification} />;
+
+    if (activeTab === 'analytics') return (
+      <Analytics 
+        lang={lang} 
+        financialData={[
+          { name: 'Jan', revenue: 4000, cost: 2400, profit: 1600, pallets: 12000, occupancy: 80, trucks: 20, temp: 18 },
+          { name: 'Feb', revenue: 3000, cost: 1398, profit: 1602, pallets: 12500, occupancy: 82, trucks: 22, temp: 18 },
+          { name: 'Mar', revenue: 2000, cost: 9800, profit: -7800, pallets: 13000, occupancy: 85, trucks: 25, temp: 19 },
+          { name: 'Apr', revenue: 2780, cost: 3908, profit: -1128, pallets: 12800, occupancy: 84, trucks: 24, temp: 18 },
+          { name: 'May', revenue: 1890, cost: 4800, profit: -2910, pallets: 12400, occupancy: 83, trucks: 23, temp: 18 },
+          { name: 'Jun', revenue: 2390, cost: 3800, profit: -1410, pallets: 12600, occupancy: 84, trucks: 24, temp: 18 },
+        ]}
+        pieData={[
+          { name: 'Labor', value: 400 },
+          { name: 'Storage', value: 300 },
+          { name: 'Utilities', value: 300 },
+          { name: 'Last Mile', value: 200 },
+        ]}
+        colors={['#F27D26', '#3b82f6', '#10b981', '#ef4444']}
+        exportReport={(title, data) => toast.success(`Exporting ${title}...`)}
+        addNotification={addNotification}
+      />
+    );
+
     switch (activeTab) {
-      case 'dashboard': return <Dashboard />;
-      case 'wms': return <WMS />;
-      case 'crm': return <CRM />;
-      case 'fleet': return <Fleet />;
-      case 'finance': return <Finance />;
-      case 'ai': return <AI />;
+      case 'dashboard': return <Dashboard lang={lang} market={market} setMarket={setMarketAndLang} setActiveTab={setActiveTab} />;
+      case 'control-tower': return <ControlTower setActiveTab={setActiveTab} market={market} lang={lang} />;
+      case 'finance': return (
+        <Financials 
+          lang={lang} 
+          financialData={[
+            { name: 'Jan', revenue: 4000, cost: 2400, profit: 1600 },
+            { name: 'Feb', revenue: 3000, cost: 1398, profit: 1602 },
+            { name: 'Mar', revenue: 2000, cost: 9800, profit: -7800 },
+            { name: 'Apr', revenue: 2780, cost: 3908, profit: -1128 },
+            { name: 'May', revenue: 1890, cost: 4800, profit: -2910 },
+            { name: 'Jun', revenue: 2390, cost: 3800, profit: -1410 },
+          ]}
+          pieData={[
+            { name: 'Labor', value: 400 },
+            { name: 'Storage', value: 300 },
+            { name: 'Utilities', value: 300 },
+            { name: 'Last Mile', value: 200 },
+          ]}
+          colors={['#F27D26', '#3b82f6', '#10b981', '#ef4444']}
+          addNotification={(msg) => toast.info(msg)}
+        />
+      );
       case 'chat': return <Chat />;
       case 'admin': return <AdminPanel />;
       default: return <Dashboard />;
@@ -252,7 +197,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-[#050505] text-white selection:bg-porteo-blue/30">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} market={market} setMarket={setMarketAndLang} lang={lang} />
       
       <main className="flex-1 p-12 overflow-y-auto">
         <AnimatePresence mode="wait">
@@ -263,7 +208,14 @@ export default function App() {
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
           >
-            {renderContent()}
+            {activeTab === 'dashboard' ? (
+              <Dashboard 
+                lang={lang} 
+                market={market} 
+                setMarket={setMarket} 
+                setActiveTab={setActiveTab} 
+              />
+            ) : renderContent()}
           </motion.div>
         </AnimatePresence>
       </main>

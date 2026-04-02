@@ -24,7 +24,12 @@ interface Lead {
   pipeline: string;
 }
 
-export const CRM: React.FC = () => {
+interface CRMProps {
+  lang?: 'en' | 'es';
+  market?: 'USA' | 'MEXICO';
+}
+
+export const CRM: React.FC<CRMProps> = ({ lang = 'en', market = 'USA' }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 

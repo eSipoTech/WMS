@@ -21,7 +21,9 @@ import {
   Bot,
   Wrench,
   Layers,
-  RefreshCw
+  RefreshCw,
+  Mail,
+  TrendingUp
 } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { MOCK_INVENTORY } from '../constants';
@@ -324,6 +326,10 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang, inventoryItems
             <span className="text-xs font-bold text-white/40 uppercase tracking-widest">{t.oee}</span>
           </div>
           <p className="text-3xl font-bold text-white">{globalOEE}%</p>
+          <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full w-fit">
+            <TrendingUp className="w-3 h-3" />
+            {lang === 'en' ? 'Optimal Performance' : 'Rendimiento Óptimo'}
+          </div>
         </div>
         <div 
           onClick={() => setShowStatsModal('active-lines')}
@@ -354,6 +360,71 @@ export const AssemblyLine: React.FC<AssemblyLineProps> = ({ lang, inventoryItems
             <span className="text-xs font-bold text-white/40 uppercase tracking-widest">{t.activeBots}</span>
           </div>
           <p className="text-3xl font-bold text-white">{bots.length}</p>
+        </div>
+      </div>
+
+      {/* AI Monitoring & Contact Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="glass p-8 rounded-[40px] border border-porteo-blue/20 bg-porteo-blue/5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-porteo-blue/20 rounded-2xl text-porteo-blue">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white uppercase tracking-tight">
+                {lang === 'en' ? 'AI Optimized Monitoring' : 'Monitoreo Optimizado por IA'}
+              </h3>
+            </div>
+            <p className="text-white/60 text-sm leading-relaxed mb-6">
+              {lang === 'en' 
+                ? 'Our AI continuously monitors line efficiency and operator performance. If anomalies are detected, the system can automatically notify the supervisor or operator.' 
+                : 'Nuestra IA monitorea continuamente la eficiencia de la línea y el rendimiento del operador. Si se detectan anomalías, el sistema puede notificar automáticamente al supervisor u operador.'}
+            </p>
+          </div>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => {
+                addNotification(lang === 'en' ? 'Contacting operator via WhatsApp...' : 'Contactando al operador vía WhatsApp...', 'info');
+              }}
+              className="flex-1 py-4 bg-[#25D366] text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20"
+            >
+              <Zap className="w-4 h-4" />
+              WhatsApp
+            </button>
+            <button 
+              onClick={() => {
+                addNotification(lang === 'en' ? 'Sending optimization report via Email...' : 'Enviando reporte de optimización vía Email...', 'info');
+              }}
+              className="flex-1 py-4 bg-white/5 text-white rounded-2xl font-bold border border-white/10 flex items-center justify-center gap-2"
+            >
+              <Mail className="w-4 h-4" />
+              Email
+            </button>
+          </div>
+        </div>
+
+        <div className="glass p-8 rounded-[40px] border border-emerald-500/20 bg-emerald-500/5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-500">
+                <TrendingUp className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white uppercase tracking-tight">
+                {lang === 'en' ? 'Predictive Efficiency' : 'Eficiencia Predictiva'}
+              </h3>
+            </div>
+            <p className="text-white/60 text-sm leading-relaxed mb-6">
+              {lang === 'en' 
+                ? 'Predictive models suggest a 12% increase in throughput by reallocating resources from Line 03 to Line 01 during the next shift.' 
+                : 'Los modelos predictivos sugieren un aumento del 12% en el rendimiento al reasignar recursos de la Línea 03 a la Línea 01 durante el próximo turno.'}
+            </p>
+          </div>
+          <button 
+            onClick={() => addNotification(lang === 'en' ? 'Applying predictive optimization...' : 'Aplicando optimización predictiva...', 'success')}
+            className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/20"
+          >
+            {lang === 'en' ? 'Apply Optimization' : 'Aplicar Optimización'}
+          </button>
         </div>
       </div>
 

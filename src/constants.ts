@@ -64,6 +64,54 @@ export const MOCK_INVENTORY_USA: InventoryItem[] = [
     category: 'Other',
     velocity: 'Medium',
     compatibility: ['RAM 1500']
+  },
+  {
+    id: 'kit-usa-001',
+    sku: 'KIT-ALT-USA',
+    name: 'Alternator Assembly',
+    quantity: 15,
+    unit: 'Kit',
+    location: 'ASS-01',
+    palletId: 'PAL-KIT-USA-001',
+    customer: 'Internal',
+    brand: 'Porteo',
+    isKit: true,
+    components: [
+      { sku: 'ALT-CORE-USA', quantity: 1 },
+      { sku: 'ALT-PULLEY-USA', quantity: 1 }
+    ]
+  },
+  {
+    id: 'kit-usa-002',
+    sku: 'KIT-BRK-USA',
+    name: 'Brake Kit - Front',
+    quantity: 12,
+    unit: 'Kit',
+    location: 'ASS-02',
+    palletId: 'PAL-KIT-USA-002',
+    customer: 'Internal',
+    brand: 'Porteo',
+    isKit: true,
+    components: [
+      { sku: 'BRK-PAD-USA', quantity: 1 },
+      { sku: 'BRK-ROTOR-USA', quantity: 2 }
+    ]
+  },
+  {
+    id: 'kit-usa-003',
+    sku: 'KIT-GSK-USA',
+    name: 'Engine Gasket Set',
+    quantity: 20,
+    unit: 'Kit',
+    location: 'ASS-03',
+    palletId: 'PAL-KIT-USA-003',
+    customer: 'Internal',
+    brand: 'Porteo',
+    isKit: true,
+    components: [
+      { sku: 'GSK-HEAD-USA', quantity: 1 },
+      { sku: 'GSK-VALVE-USA', quantity: 2 }
+    ]
   }
 ];
 
@@ -95,6 +143,55 @@ export const MOCK_INVENTORY_MEXICO: InventoryItem[] = [
     category: 'Other',
     velocity: 'Low',
     compatibility: ['All Vehicles']
+  },
+  {
+    id: 'kit-mex-001',
+    sku: 'KIT-ALT-001',
+    name: 'Alternator Assembly',
+    quantity: 10,
+    unit: 'Kit',
+    location: 'ASS-01',
+    palletId: 'PAL-KIT-001',
+    customer: 'Internal',
+    brand: 'Porteo',
+    isKit: true,
+    components: [
+      { sku: 'ALT-CORE', quantity: 1 },
+      { sku: 'ALT-PULLEY', quantity: 1 },
+      { sku: 'ALT-BOLT-SET', quantity: 4 }
+    ]
+  },
+  {
+    id: 'kit-mex-002',
+    sku: 'KIT-BRK-001',
+    name: 'Brake Kit - Front',
+    quantity: 5,
+    unit: 'Kit',
+    location: 'ASS-02',
+    palletId: 'PAL-KIT-002',
+    customer: 'Internal',
+    brand: 'Porteo',
+    isKit: true,
+    components: [
+      { sku: 'BRK-PAD-SET', quantity: 1 },
+      { sku: 'BRK-ROTOR', quantity: 2 }
+    ]
+  },
+  {
+    id: 'kit-mex-003',
+    sku: 'KIT-GSK-001',
+    name: 'Engine Gasket Set',
+    quantity: 8,
+    unit: 'Kit',
+    location: 'ASS-03',
+    palletId: 'PAL-KIT-003',
+    customer: 'Internal',
+    brand: 'Porteo',
+    isKit: true,
+    components: [
+      { sku: 'GSK-HEAD', quantity: 1 },
+      { sku: 'GSK-VALVE', quantity: 2 }
+    ]
   }
 ];
 

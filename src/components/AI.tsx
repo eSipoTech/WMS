@@ -20,7 +20,11 @@ import {
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
-export const AI: React.FC = () => {
+interface AIProps {
+  lang?: 'en' | 'es';
+}
+
+export const AI: React.FC<AIProps> = ({ lang = 'en' }) => {
   const [activeModel, setActiveModel] = useState('LOGISTICS_AGENT_V1');
 
   const models = [

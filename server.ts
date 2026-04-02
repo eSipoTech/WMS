@@ -5,16 +5,13 @@ import http from "http";
 import cors from "cors";
 import morgan from "morgan";
 import path from "path";
-import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const db = new Database("porteo_wms.db");
 
 // Initialize database with new tables for MVP
 db.exec(`
+  DROP TABLE IF EXISTS inventory;
   CREATE TABLE IF NOT EXISTS inventory (
     id TEXT PRIMARY KEY,
     sku TEXT NOT NULL,
@@ -22,6 +19,7 @@ db.exec(`
     quantity INTEGER NOT NULL,
     unit TEXT,
     location TEXT,
+    warehouse TEXT,
     palletId TEXT,
     customer TEXT,
     brand TEXT,
@@ -86,8 +84,8 @@ if (userCount.count === 0) {
 const invCount = db.prepare("SELECT count(*) as count FROM inventory").get() as { count: number };
 if (invCount.count === 0) {
   const items = [
-    ['1', 'SKU-001', 'Industrial Pallet', 150, 'P-01', 'MX-CDMX Hub', 'MX'],
-    ['2', 'SKU-002', 'Forklift Battery', 12, 'B-05', 'MX-CDMX Hub', 'MX'],
+    ['1', 'SKU-001', 'Industrial Pallet', 150, 'P-01', 'MX-CDMX Hub', 'MEXICO'],
+    ['2', 'SKU-002', 'Forklift Battery', 12, 'B-05', 'MX-CDMX Hub', 'MEXICO'],
     ['3', 'SKU-003', 'Safety Harness', 85, 'S-12', 'USA-TX Hub', 'USA'],
     ['4', 'SKU-004', 'Conveyor Belt', 5, 'C-02', 'USA-TX Hub', 'USA'],
   ];
@@ -148,11 +146,16 @@ async function startServer() {
   // --- WMS & INVENTORY API ---
   app.get("/api/inventory", (req, res) => {
     const market = req.query.market as string;
-    let query = "SELECT * FROM inventory";
+    let query = "SELECT id, sku, name, quantity as qty, location as bin, warehouse, market FROM inventory";
     let params: any[] = [];
     if (market) { query += " WHERE market = ?"; params.push(market); }
-    const items = db.prepare(query).all(...params);
-    res.json(items);
+    try {
+      const items = db.prepare(query).all(...params);
+      res.json(items);
+    } catch (error) {
+      console.error("Inventory API Error:", error);
+      res.status(500).json({ error: "Failed to fetch inventory" });
+    }
   });
 
   app.get("/api/orders", (req, res) => {
@@ -167,7 +170,7 @@ async function startServer() {
       const updateInv = db.prepare("UPDATE inventory SET quantity = quantity + ? WHERE sku = ?");
       items.forEach((item: any) => updateInv.run(item.qty, item.sku));
       db.prepare("INSERT INTO activity (id, type, description, market) VALUES (?, ?, ?, ?)").run(
-        `act-${Date.now()}`, 'INBOUND', `Received ${orderId}`, 'MX'
+        `act-${Date.now()}`, 'INBOUND', `Received ${orderId}`, 'MEXICO'
       );
     });
     transaction();
@@ -185,7 +188,7 @@ async function startServer() {
       const updateInv = db.prepare("UPDATE inventory SET quantity = quantity - ? WHERE sku = ?");
       items.forEach((item: any) => updateInv.run(item.qty, item.sku));
       db.prepare("INSERT INTO activity (id, type, description, market) VALUES (?, ?, ?, ?)").run(
-        `act-${Date.now()}`, 'OUTBOUND', `Picked ${orderId}`, 'MX'
+        `act-${Date.now()}`, 'OUTBOUND', `Picked ${orderId}`, 'MEXICO'
       );
     });
     transaction();

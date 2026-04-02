@@ -27,9 +27,20 @@ interface Vehicle {
   costPerKm: number;
 }
 
-export const Fleet: React.FC = () => {
+interface FleetProps {
+  activeTab?: string;
+}
+
+export const Fleet: React.FC<FleetProps> = ({ activeTab }) => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeSubTab, setActiveSubTab] = useState<'tracking' | 'routes' | 'costs'>('tracking');
+
+  useEffect(() => {
+    if (activeTab === 'fleet-tracking') setActiveSubTab('tracking');
+    if (activeTab === 'fleet-routes') setActiveSubTab('routes');
+    if (activeTab === 'fleet-costs') setActiveSubTab('costs');
+  }, [activeTab]);
 
   const fetchVehicles = async () => {
     setIsLoading(true);
@@ -65,6 +76,27 @@ export const Fleet: React.FC = () => {
           <Plus className="w-5 h-5" />
           Register Unit
         </button>
+      </div>
+
+      <div className="flex gap-2 p-1 bg-white/5 rounded-2xl w-fit border border-white/10">
+        {[
+          { id: 'tracking', label: 'Live Tracking', icon: MapPin },
+          { id: 'routes', label: 'Route Optimization', icon: Navigation },
+          { id: 'costs', label: 'Cost Analysis', icon: DollarSign },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveSubTab(tab.id as any)}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+              activeSubTab === tab.id 
+                ? 'bg-white/10 text-white shadow-inner' 
+                : 'text-white/40 hover:text-white/60'
+            }`}
+          >
+            <tab.icon className={`w-4 h-4 ${activeSubTab === tab.id ? 'text-porteo-blue' : ''}`} />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

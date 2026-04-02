@@ -40,8 +40,8 @@ export const Login: React.FC = () => {
           <div className="p-4 bg-porteo-blue/20 rounded-2xl mb-4">
             <ShieldCheck className="w-12 h-12 text-porteo-blue" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Porteo Logistics</h1>
-          <p className="text-white/60 mt-2">Enterprise Core Platform MVP</p>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Porteo Group</h1>
+          <p className="text-white/60 mt-2">WMS Platform</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">

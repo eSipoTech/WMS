@@ -16,7 +16,7 @@ interface TPLWorkflowProps {
   warehouses: any[];
 }
 
-export const TPLWorkflow = ({ 
+export const ThreePLWorkflow = ({ 
   lang, 
   shipments = MOCK_TPL_PROCESSES, 
   onUpdateStatus, 
@@ -28,6 +28,7 @@ export const TPLWorkflow = ({
   warehouses
 }: TPLWorkflowProps) => {
   const language = lang; // Alias for backward compatibility
+  const [activeCategory, setActiveCategory] = useState<'all' | 'inbound' | 'outbound'>('all');
   const workflowSteps = [
     { id: 'collection', icon: <Truck className="w-4 h-4" />, label: { en: 'Collection', es: 'Recolección' } },
     { id: 'in-transit-to-wh', icon: <MapPin className="w-4 h-4" />, label: { en: 'Arrival', es: 'Llegada' } },
@@ -178,9 +179,14 @@ export const TPLWorkflow = ({
       const matchesCustomer = filterCustomer === 'all' || p.customer === filterCustomer;
       const matchesTruckType = filterTruckType === 'all' || p.truckType === filterTruckType;
       
-      return matchesSearch && matchesStatus && matchesCustomer && matchesTruckType;
+      const inboundSteps = ['collection', 'in-transit-to-wh', 'unloading', 'classifying', 'storage'];
+      const matchesCategory = activeCategory === 'all' || 
+        (activeCategory === 'inbound' && inboundSteps.includes(p.status)) ||
+        (activeCategory === 'outbound' && !inboundSteps.includes(p.status));
+
+      return matchesSearch && matchesStatus && matchesCustomer && matchesTruckType && matchesCategory;
     });
-  }, [shipments, searchQuery, filterStatus, filterCustomer, filterTruckType]);
+  }, [shipments, searchQuery, filterStatus, filterCustomer, filterTruckType, activeCategory]);
 
   const customers = useMemo(() => Array.from(new Set(shipments.map(s => s.customer))), [shipments]);
   const truckTypes = useMemo(() => Array.from(new Set(shipments.map(s => s.truckType))), [shipments]);
@@ -245,6 +251,27 @@ export const TPLWorkflow = ({
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+            <button 
+              onClick={() => setActiveCategory('all')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeCategory === 'all' ? 'bg-porteo-orange text-white' : 'text-white/40 hover:text-white'}`}
+            >
+              {language === 'en' ? 'All' : 'Todos'}
+            </button>
+            <button 
+              onClick={() => setActiveCategory('inbound')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeCategory === 'inbound' ? 'bg-porteo-orange text-white' : 'text-white/40 hover:text-white'}`}
+            >
+              {language === 'en' ? 'Inbound' : 'Descargas'}
+            </button>
+            <button 
+              onClick={() => setActiveCategory('outbound')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeCategory === 'outbound' ? 'bg-porteo-orange text-white' : 'text-white/40 hover:text-white'}`}
+            >
+              {language === 'en' ? 'Outbound' : 'Cargas'}
+            </button>
+          </div>
+
           <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
             <button 
               onClick={() => setViewMode('split')}
@@ -421,7 +448,15 @@ export const TPLWorkflow = ({
                         <span className="text-xs font-bold text-white">{p.customer}</span>
                       </td>
                       <td className="px-4 py-4 border-y border-white/5">
-                        <span className="text-xs font-mono text-porteo-orange font-bold">{p.truckId}</span>
+                        <button 
+                          onClick={() => {
+                            setSelectedProcess(p);
+                            setViewMode('split');
+                          }}
+                          className="text-xs font-mono text-porteo-orange font-bold hover:underline"
+                        >
+                          {p.truckId}
+                        </button>
                       </td>
                       <td className="px-4 py-4 border-y border-white/5">
                         <span className="text-[10px] px-2 py-0.5 bg-white/10 rounded uppercase font-bold text-white/60">{p.truckType}</span>
