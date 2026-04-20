@@ -10,10 +10,12 @@ interface NotificationCenterProps {
   lang: Language;
   notifications: WMSNotification[];
   onAction?: (action: string) => void;
+  onDismiss?: (id: string) => void;
+  onClearAll?: () => void;
   addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const NotificationCenter = ({ isOpen, onClose, lang, notifications, onAction, addNotification }: NotificationCenterProps) => {
+export const NotificationCenter = ({ isOpen, onClose, lang, notifications, onAction, onDismiss, onClearAll, addNotification }: NotificationCenterProps) => {
   const language = lang; // Alias for backward compatibility
   return (
     <AnimatePresence>
@@ -57,10 +59,18 @@ export const NotificationCenter = ({ isOpen, onClose, lang, notifications, onAct
                 notifications.map((n) => (
                   <div key={n.id} className={`p-5 rounded-2xl border transition-all ${n.read ? 'bg-white/5 border-white/10' : 'bg-porteo-blue/10 border-porteo-blue/30 ring-1 ring-porteo-blue/20'}`}>
                     <div className="flex justify-between items-start mb-3">
-                      <div className={`p-2 rounded-lg ${n.type === 'market' ? 'bg-porteo-blue/20 text-porteo-blue' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
-                        {n.type === 'market' ? <Zap className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${n.type === 'market' ? 'bg-porteo-blue/20 text-porteo-blue' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
+                          {n.type === 'market' ? <Zap className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                        </div>
+                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{n.timestamp}</span>
                       </div>
-                      <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{n.timestamp}</span>
+                      <button 
+                        onClick={() => onDismiss?.(n.id)}
+                        className="p-1 text-white/20 hover:text-white transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
                     <h3 className="text-sm font-bold text-white mb-1">{n.title[language]}</h3>
                     <p className="text-xs text-white/60 leading-relaxed mb-4">{n.description[language]}</p>
@@ -85,8 +95,11 @@ export const NotificationCenter = ({ isOpen, onClose, lang, notifications, onAct
             </div>
 
             <div className="p-6 border-t border-white/10 bg-black/20">
-              <button className="w-full py-3 text-sm font-bold text-white/40 hover:text-white transition-colors">
-                {language === 'en' ? 'Mark all as read' : 'Marcar todo como leído'}
+              <button 
+                onClick={onClearAll}
+                className="w-full py-3 text-sm font-bold text-white/40 hover:text-white transition-colors"
+              >
+                {language === 'en' ? 'Clear all notifications' : 'Limpiar todas las notificaciones'}
               </button>
             </div>
           </motion.div>

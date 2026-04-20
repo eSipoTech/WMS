@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Send, X, Terminal, Cpu, TrendingUp, ShieldAlert, Paperclip, Warehouse } from 'lucide-react';
-import { getAIAssistance } from '../services/geminiService';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Bot, Send, X, Terminal, Cpu, TrendingUp, ShieldAlert, Paperclip, Warehouse, Sparkles } from 'lucide-react';
+import { getAIAssistance, getOperationalAdvice, getPredictiveDiscrepancy } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 
 interface AIAssistantProps {
@@ -17,20 +17,62 @@ export const AIAssistant = ({ role, lang, context, onFileUpload }: AIAssistantPr
   const [messages, setMessages] = useState<{ role: 'user' | 'ai', text: string }[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<{ label: string, type: 'bottleneck' | 'inventory' }[]>([]);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
+  const handleSend = async (overrideInput?: string) => {
+    const messageToSend = overrideInput || input;
+    if (!messageToSend.trim()) return;
     
-    const userMsg = input;
-    setInput('');
+    const userMsg = messageToSend;
+    if (!overrideInput) setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsLoading(true);
+    setSuggestions([]); // Clear suggestions on send
 
     try {
       const response = await getAIAssistance(role, userMsg, context, language);
       setMessages(prev => [...prev, { role: 'ai', text: response || 'Error' }]);
+      
+      // Check for new suggestions after AI response
+      if (role === 'Assembly Expert') {
+        const fullHistory = [...messages, { role: 'user', text: userMsg }, { role: 'ai', text: response }].map(m => m.text).join(' ').toLowerCase();
+        const newSuggestions: { label: string, type: 'bottleneck' | 'inventory' }[] = [];
+        
+        if (fullHistory.includes('bottleneck') || fullHistory.includes('cuello de botella') || fullHistory.includes('efficiency') || fullHistory.includes('slow')) {
+          newSuggestions.push({ 
+            label: language === 'en' ? 'Optimize Assembly Flow' : 'Optimizar Flujo de Ensamblaje',
+            type: 'bottleneck'
+          });
+        }
+        
+        if (fullHistory.includes('low inventory') || fullHistory.includes('bajo inventario') || fullHistory.includes('stock') || fullHistory.includes('discrepancy') || fullHistory.includes('missing')) {
+          newSuggestions.push({ 
+            label: language === 'en' ? 'Run Inventory Audit' : 'Ejecutar Auditoría de Inventario',
+            type: 'inventory'
+          });
+        }
+        setSuggestions(newSuggestions);
+      }
     } catch (error) {
       setMessages(prev => [...prev, { role: 'ai', text: 'Sorry, I encountered an error.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSuggestionClick = async (type: 'bottleneck' | 'inventory') => {
+    setIsLoading(true);
+    setSuggestions([]);
+    try {
+      let response = '';
+      if (type === 'bottleneck') {
+        response = await getOperationalAdvice('Assembly Line', context) || '';
+      } else {
+        response = await getPredictiveDiscrepancy(context, language) || '';
+      }
+      setMessages(prev => [...prev, { role: 'ai', text: response }]);
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'ai', text: 'Error executing suggestion.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -117,6 +159,22 @@ export const AIAssistant = ({ role, lang, context, onFileUpload }: AIAssistantPr
                   </div>
                 </div>
               ))}
+              {suggestions.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {suggestions.map((s, i) => (
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      key={i}
+                      onClick={() => handleSuggestionClick(s.type)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-porteo-orange/10 border border-porteo-orange/30 rounded-full text-[10px] font-bold text-porteo-orange hover:bg-porteo-orange/20 transition-all"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      {s.label}
+                    </motion.button>
+                  ))}
+                </div>
+              )}
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="bg-white/5 p-3 rounded-2xl border border-white/10">
@@ -149,7 +207,7 @@ export const AIAssistant = ({ role, lang, context, onFileUpload }: AIAssistantPr
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-porteo-orange/50 transition-colors"
                   />
                   <button
-                    onClick={handleSend}
+                    onClick={() => handleSend()}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-porteo-orange text-white rounded-lg hover:bg-porteo-orange/80 transition-colors"
                   >
                     <Send className="w-4 h-4" />

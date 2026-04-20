@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, marke
       commercial: 'Commercial',
       crm: 'CRM (B2B)',
       commMgmt: 'Commercial Mgmt',
-      tplBilling: 'TPL Billing',
+      tplBilling: '3PL Billing',
       fleetMgmt: 'Fleet Mgmt',
       liveTracking: 'Live Tracking',
       routeOpt: 'Route Optimization',
@@ -88,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, marke
       commercial: 'Comercial',
       crm: 'CRM (B2B)',
       commMgmt: 'Gestión Comercial',
-      tplBilling: 'Facturación TPL',
+      tplBilling: 'Facturación 3pl',
       fleetMgmt: 'Gestión de Flota',
       liveTracking: 'Rastreo en Vivo',
       routeOpt: 'Optimización de Rutas',
@@ -145,6 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, marke
       subItems: [
         { id: 'fleet-tracking', label: t.liveTracking, icon: MapIcon },
         { id: 'fleet-routes', label: t.routeOpt, icon: Navigation },
+        { id: 'fleet-costs', label: lang === 'es' ? 'Análisis de Costos' : 'Cost Analysis', icon: DollarSign },
         { id: 'adv-logistics', label: t.advLogistics, icon: Globe },
       ]
     },

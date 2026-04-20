@@ -39,6 +39,7 @@ import { PatioManagement } from './PatioManagement';
 import { AssemblyLine } from './AssemblyLine';
 import { ThreePLWorkflow } from './ThreePLWorkflow';
 import { InventoryItem, PatioSlot, TPLProcess, Warehouse } from '../types';
+import { getPredictiveDiscrepancy, performItemAudit, AuditSuggestion } from '../services/aiService';
 
 interface WMSProps {
   activeTab?: string;
@@ -74,6 +75,16 @@ export const WMS: React.FC<WMSProps> = ({
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<any>(null);
   const [selectedRackDetails, setSelectedRackDetails] = useState<any>(null);
+  const [filterWarehouse, setFilterWarehouse] = useState<string>('all');
+  const [filterBin, setFilterBin] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [sortField, setSortField] = useState<string>('sku');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [auditSuggestions, setAuditSuggestions] = useState<AuditSuggestion[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [auditingItem, setAuditingItem] = useState<any>(null);
+  const [auditResult, setAuditResult] = useState<any>(null);
+  const [isAuditing, setIsAuditing] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'wms-inventory') setActiveSubTab('inventory');
@@ -118,6 +129,38 @@ export const WMS: React.FC<WMSProps> = ({
     fetchData();
   }, [market]);
 
+  useEffect(() => {
+    if (inventory.length > 0 && activeSubTab === 'inventory' && auditSuggestions.length === 0) {
+      const analyze = async () => {
+        setIsAnalyzing(true);
+        try {
+          const suggestions = await getPredictiveDiscrepancy(inventory);
+          setAuditSuggestions(suggestions);
+        } catch (error) {
+          console.error("Analysis failed", error);
+        } finally {
+          setIsAnalyzing(false);
+        }
+      };
+      analyze();
+    }
+  }, [inventory, activeSubTab]);
+
+  const handleAuditItem = async (item: any) => {
+    setAuditingItem(item);
+    setIsAuditing(true);
+    setAuditResult(null);
+    
+    try {
+      const result = await performItemAudit(item);
+      setAuditResult(result);
+    } catch (error) {
+      toast.error(lang === 'es' ? 'Error al auditar' : 'Audit failed');
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
   const handleReceive = async (orderId: string) => {
     try {
       const order = orders.find(o => o.id === orderId);
@@ -152,13 +195,62 @@ export const WMS: React.FC<WMSProps> = ({
   };
 
   const filteredInventory = useMemo(() => {
-    return inventory.filter(item => 
+    let result = inventory.filter(item => 
       item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.bin.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.warehouse.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [inventory, searchTerm]);
+
+    if (filterWarehouse !== 'all') {
+      result = result.filter(item => item.warehouse === filterWarehouse);
+    }
+
+    if (filterBin !== 'all') {
+      result = result.filter(item => item.bin.startsWith(filterBin));
+    }
+
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'low-stock') {
+        result = result.filter(item => item.qty > 0 && item.qty < 20);
+      } else if (filterStatus === 'out-of-stock') {
+        result = result.filter(item => item.qty === 0);
+      } else if (filterStatus === 'in-stock') {
+        result = result.filter(item => item.qty >= 20);
+      }
+    }
+
+    return result.sort((a, b) => {
+      const aValue = a[sortField];
+      const bValue = b[sortField];
+      
+      if (aValue === undefined || bValue === undefined) return 0;
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortOrder === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+      
+      return sortOrder === 'asc' 
+        ? (aValue > bValue ? 1 : -1)
+        : (bValue > aValue ? 1 : -1);
+    });
+  }, [inventory, searchTerm, filterWarehouse, filterBin, filterStatus, sortField, sortOrder]);
+
+  const uniqueBins = useMemo(() => {
+    const bins = inventory.map(item => item.bin.split('-')[0]);
+    return Array.from(new Set(bins)).sort();
+  }, [inventory]);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const toggleItemSelection = (id: string) => {
     const newSelected = new Set(selectedItems);
@@ -272,23 +364,69 @@ export const WMS: React.FC<WMSProps> = ({
                 <motion.div 
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
-                  className="px-6 py-4 border-b border-white/5 bg-white/5 grid grid-cols-3 gap-4"
+                  className="px-6 py-4 border-b border-white/5 bg-white/5 grid grid-cols-1 md:grid-cols-4 gap-4"
                 >
-                  <select className="bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-white outline-none">
-                    <option value="">{lang === 'es' ? 'Todos los Almacenes' : 'All Warehouses'}</option>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                  </select>
-                  <select className="bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-white outline-none">
-                    <option value="">{lang === 'es' ? 'Todos los Estatus' : 'All Status'}</option>
-                    <option value="in-stock">{lang === 'es' ? 'En Stock' : 'In Stock'}</option>
-                    <option value="out-of-stock">{lang === 'es' ? 'Sin Stock' : 'Out of Stock'}</option>
-                  </select>
-                  <button 
-                    onClick={() => setShowFilters(false)}
-                    className="bg-porteo-blue/20 text-porteo-blue py-2 rounded-lg text-xs font-bold"
-                  >
-                    {lang === 'es' ? 'Aplicar Filtros' : 'Apply Filters'}
-                  </button>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'es' ? 'Almacén' : 'Warehouse'}</label>
+                    <select 
+                      value={filterWarehouse}
+                      onChange={(e) => setFilterWarehouse(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-white outline-none focus:border-porteo-blue/50"
+                    >
+                      <option value="all">{lang === 'es' ? 'Todos los Almacenes' : 'All Warehouses'}</option>
+                      {Array.from(new Set(inventory.map(i => i.warehouse))).map(w => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'es' ? 'Zona (Bin)' : 'Zone (Bin)'}</label>
+                    <select 
+                      value={filterBin}
+                      onChange={(e) => setFilterBin(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-white outline-none focus:border-porteo-blue/50"
+                    >
+                      <option value="all">{lang === 'es' ? 'Todas las Zonas' : 'All Zones'}</option>
+                      {uniqueBins.map(b => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{lang === 'es' ? 'Estatus' : 'Status'}</label>
+                    <select 
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-white outline-none focus:border-porteo-blue/50"
+                    >
+                      <option value="all">{lang === 'es' ? 'Todos los Estatus' : 'All Status'}</option>
+                      <option value="in-stock">{lang === 'es' ? 'En Stock' : 'In Stock'}</option>
+                      <option value="low-stock">{lang === 'es' ? 'Stock Bajo' : 'Low Stock'}</option>
+                      <option value="out-of-stock">{lang === 'es' ? 'Sin Stock' : 'Out of Stock'}</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-end gap-2">
+                    <button 
+                      onClick={() => {
+                        setFilterWarehouse('all');
+                        setFilterBin('all');
+                        setFilterStatus('all');
+                        setSearchTerm('');
+                      }}
+                      className="flex-1 bg-white/5 border border-white/10 text-white/60 py-2 rounded-lg text-xs font-bold hover:bg-white/10 transition-all"
+                    >
+                      {lang === 'es' ? 'Limpiar' : 'Clear'}
+                    </button>
+                    <button 
+                      onClick={() => setShowFilters(false)}
+                      className="flex-1 bg-porteo-blue text-white py-2 rounded-lg text-xs font-bold hover:bg-porteo-blue/90 transition-all shadow-lg shadow-porteo-blue/20"
+                    >
+                      {lang === 'es' ? 'Cerrar' : 'Close'}
+                    </button>
+                  </div>
                 </motion.div>
               )}
 
@@ -304,10 +442,42 @@ export const WMS: React.FC<WMSProps> = ({
                           className="rounded border-white/20 bg-white/5 text-porteo-blue focus:ring-porteo-blue"
                         />
                       </th>
-                      <th className="px-6 py-4">{lang === 'es' ? 'SKU / Producto' : 'SKU / Product'}</th>
-                      <th className="px-6 py-4">{lang === 'es' ? 'Cantidad' : 'Quantity'}</th>
-                      <th className="px-6 py-4">{lang === 'es' ? 'Ubicación (Bin)' : 'Location (Bin)'}</th>
-                      <th className="px-6 py-4">{lang === 'es' ? 'Almacén' : 'Warehouse'}</th>
+                      <th 
+                        className="px-6 py-4 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('name')}
+                      >
+                        <div className="flex items-center gap-2">
+                          {lang === 'es' ? 'SKU / Producto' : 'SKU / Product'}
+                          {sortField === 'name' && (sortOrder === 'asc' ? <TrendingUp className="w-3 h-3 rotate-90" /> : <TrendingUp className="w-3 h-3 rotate-180" />)}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('qty')}
+                      >
+                        <div className="flex items-center gap-2">
+                          {lang === 'es' ? 'Cantidad' : 'Quantity'}
+                          {sortField === 'qty' && (sortOrder === 'asc' ? <TrendingUp className="w-3 h-3 rotate-90" /> : <TrendingUp className="w-3 h-3 rotate-180" />)}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('bin')}
+                      >
+                        <div className="flex items-center gap-2">
+                          {lang === 'es' ? 'Ubicación (Bin)' : 'Location (Bin)'}
+                          {sortField === 'bin' && (sortOrder === 'asc' ? <TrendingUp className="w-3 h-3 rotate-90" /> : <TrendingUp className="w-3 h-3 rotate-180" />)}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 cursor-pointer hover:text-white transition-colors"
+                        onClick={() => handleSort('warehouse')}
+                      >
+                        <div className="flex items-center gap-2">
+                          {lang === 'es' ? 'Almacén' : 'Warehouse'}
+                          {sortField === 'warehouse' && (sortOrder === 'asc' ? <TrendingUp className="w-3 h-3 rotate-90" /> : <TrendingUp className="w-3 h-3 rotate-180" />)}
+                        </div>
+                      </th>
                       <th className="px-6 py-4">{lang === 'es' ? 'Estatus' : 'Status'}</th>
                       <th className="px-6 py-4">{lang === 'es' ? 'Acciones' : 'Actions'}</th>
                     </tr>
@@ -334,11 +504,23 @@ export const WMS: React.FC<WMSProps> = ({
                         </td>
                         <td className="px-6 py-5">
                           <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-porteo-blue/10 flex items-center justify-center text-porteo-blue font-bold">
+                            <div className="w-10 h-10 rounded-xl bg-porteo-blue/10 flex items-center justify-center text-porteo-blue font-bold relative">
                               {item.sku[0]}
+                              {auditSuggestions.find(s => s.sku === item.sku) && (
+                                <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#0A0A0A] ${
+                                  auditSuggestions.find(s => s.sku === item.sku)?.riskLevel === 'high' ? 'bg-porteo-orange' : 'bg-amber-400'
+                                }`} />
+                              )}
                             </div>
                             <div>
-                              <p className="text-white font-bold">{item.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-white font-bold">{item.name}</p>
+                                {auditSuggestions.find(s => s.sku === item.sku) && (
+                                  <span className="text-[8px] px-1.5 py-0.5 bg-porteo-orange/20 text-porteo-orange rounded border border-porteo-orange/30 font-bold uppercase tracking-tighter">
+                                    AI Risk
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs text-white/40 font-mono">{item.sku}</p>
                             </div>
                           </div>
@@ -366,13 +548,17 @@ export const WMS: React.FC<WMSProps> = ({
                         <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
                             <button 
-                              onClick={() => {
-                                toast.info(lang === 'es' ? `Auditando ${item.sku}` : `Auditing ${item.sku}`);
-                              }}
-                              className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white hover:bg-porteo-blue/20 transition-all"
-                              title={lang === 'es' ? 'Auditar' : 'Audit'}
+                              onClick={() => handleAuditItem(item)}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${
+                                auditSuggestions.find(s => s.sku === item.sku)
+                                  ? 'bg-porteo-orange text-white shadow-lg shadow-porteo-orange/20 hover:bg-porteo-orange/90'
+                                  : 'bg-white/5 text-white/40 hover:text-white hover:bg-porteo-blue/20'
+                              }`}
                             >
                               <ClipboardList className="w-4 h-4" />
+                              <span className="text-[10px] font-bold uppercase tracking-widest hidden xl:block">
+                                {lang === 'es' ? 'Auditar' : 'Audit'}
+                              </span>
                             </button>
                             <button 
                               onClick={() => {
@@ -638,15 +824,107 @@ export const WMS: React.FC<WMSProps> = ({
                     {lang === 'es' ? 'Imprimir Etiqueta' : 'Print Label'}
                   </button>
                   <button 
-                    onClick={() => {
-                      toast.info(lang === 'es' ? 'Iniciando auditoría...' : 'Starting audit...');
-                      setSelectedInventoryItem(null);
-                    }}
+                    onClick={() => handleAuditItem(selectedInventoryItem)}
                     className="flex-1 py-4 bg-porteo-blue text-white rounded-2xl font-bold hover:bg-porteo-blue/80 transition-all"
                   >
                     {lang === 'es' ? 'Auditar Artículo' : 'Audit Item'}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Audit Progress & Result Modal */}
+      <AnimatePresence>
+        {(auditingItem || auditResult) && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#0A0A0A] border border-white/10 rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl"
+            >
+              <div className="p-8 text-center space-y-6">
+                <div className="flex justify-center">
+                  <div className="w-20 h-20 rounded-full bg-porteo-blue/10 flex items-center justify-center relative">
+                    {isAuditing ? (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                      >
+                        <RefreshCw className="w-10 h-10 text-porteo-blue" />
+                      </motion.div>
+                    ) : auditResult?.confirmed ? (
+                      <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-10 h-10 text-porteo-orange" />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-2xl font-bold text-white">
+                    {isAuditing ? (lang === 'es' ? 'Auditando...' : 'Auditing...') : (lang === 'es' ? 'Resultado de Auditoría' : 'Audit Result')}
+                  </h3>
+                  <p className="text-white/40 font-mono mt-1">{auditingItem?.sku}</p>
+                </div>
+
+                <div className="p-6 bg-white/5 rounded-2xl border border-white/5 text-left">
+                  {isAuditing ? (
+                    <div className="space-y-4">
+                      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                        <motion.div 
+                          className="h-full bg-porteo-blue"
+                          initial={{ width: "0%" }}
+                          animate={{ width: "100%" }}
+                          transition={{ duration: 3 }}
+                        />
+                      </div>
+                      <p className="text-xs text-white/60 italic text-center">
+                        {lang === 'es' ? 'Verificando registros físicos vs digitales...' : 'Verifying physical vs digital records...'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-white/60">{lang === 'es' ? 'Estado' : 'Status'}</span>
+                        <span className={`text-sm font-bold ${auditResult?.confirmed ? 'text-emerald-400' : 'text-porteo-orange'}`}>
+                          {auditResult?.confirmed ? (lang === 'es' ? 'Confirmado' : 'Confirmed') : (lang === 'es' ? 'Discrepancia' : 'Discrepancy')}
+                        </span>
+                      </div>
+                      <p className="text-sm text-white leading-relaxed">
+                        {auditResult?.message}
+                      </p>
+                      {!auditResult?.confirmed && auditResult?.discrepancy !== undefined && (
+                        <div className="pt-4 border-t border-white/5 flex justify-between items-center">
+                          <span className="text-sm text-white/60">{lang === 'es' ? 'Diferencia' : 'Variance'}</span>
+                          <span className="text-sm font-bold text-porteo-orange">
+                            {auditResult.discrepancy > 0 ? '+' : ''}{auditResult.discrepancy} units
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {!isAuditing && (
+                  <button 
+                    onClick={() => {
+                      setAuditingItem(null);
+                      setAuditResult(null);
+                    }}
+                    className="w-full py-4 bg-porteo-blue text-white rounded-2xl font-bold hover:bg-porteo-blue/80 transition-all"
+                  >
+                    {lang === 'es' ? 'Entendido' : 'Got it'}
+                  </button>
+                )}
               </div>
             </motion.div>
           </motion.div>

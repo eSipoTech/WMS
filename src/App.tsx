@@ -19,6 +19,7 @@ import { ThreePLWorkflow } from './components/ThreePLWorkflow';
 import { CommercialManagement } from './components/CommercialManagement';
 import { TPLBilling } from './components/TPLBilling';
 import { AdvancedLogistics } from './components/AdvancedLogistics';
+import { NotificationCenter } from './components/NotificationCenter';
 import { IntelligenceAgents } from './components/IntelligenceAgents';
 import { StrategicResearch } from './components/StrategicResearch';
 import { Financials } from './components/Financials';
@@ -67,6 +68,7 @@ export default function App() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(MOCK_WAREHOUSES[0].id);
   const [notifications, setNotifications] = useState<WMSNotification[]>(MOCK_NOTIFICATIONS);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
 
   useEffect(() => {
     if (market === 'MEXICO') {
@@ -92,7 +94,63 @@ export default function App() {
       read: false
     };
     setNotifications(prev => [newNotification, ...prev]);
-    toast[type === 'alert' ? 'error' : type === 'operational' ? 'info' : type](message);
+    toast[type === 'alert' ? 'error' : type === 'operational' ? 'info' : type](message, {
+      description: message,
+    });
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const clearAllNotifications = () => {
+    setNotifications([]);
+    toast.success(lang === 'es' ? 'Notificaciones limpiadas' : 'Notifications cleared');
+  };
+
+  const exportReport = (title: string, data: any) => {
+    try {
+      let csvContent = "";
+      if (Array.isArray(data)) {
+        if (data.length > 0) {
+          const keys = Object.keys(data[0]);
+          csvContent = keys.join(',') + '\n' + data.map(row => 
+            keys.map(key => JSON.stringify(row[key])).join(',')
+          ).join('\n');
+        } else {
+          csvContent = "No data available";
+        }
+      } else {
+        // Handle object with multiple datasets
+        Object.entries(data).forEach(([key, value]) => {
+          csvContent += `--- ${key.toUpperCase()} ---\n`;
+          if (Array.isArray(value) && value.length > 0) {
+            const keys = Object.keys(value[0]);
+            csvContent += keys.join(',') + '\n' + value.map(row => 
+              keys.map(k => JSON.stringify((row as any)[k])).join(',')
+            ).join('\n') + '\n\n';
+          } else {
+            csvContent += JSON.stringify(value) + '\n\n';
+          }
+        });
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.style.display = 'none';
+      a.download = `${title.replace(/\s+/g, '_')}_Report.csv`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+      toast.success(lang === 'es' ? `${title} exportado correctamente` : `${title} exported successfully`);
+    } catch (error) {
+      toast.error('Export failed');
+    }
   };
 
   const setMarketAndLang = (m: 'USA' | 'MEXICO') => {
@@ -106,7 +164,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#050505]">
         <Login />
-        <Toaster position="top-right" theme="dark" richColors />
+        <Toaster position="top-right" theme="dark" richColors closeButton />
       </div>
     );
   }
@@ -133,8 +191,7 @@ export default function App() {
     if (activeTab === 'tpl-billing') return <TPLBilling lang={lang} market={market} warehouse={warehouses.find(w => w.id === selectedWarehouseId)} addNotification={addNotification} />;
 
     // Fleet Sub-tabs
-    if (activeTab === 'fleet-tracking') return <Fleet activeTab="fleet-tracking" />;
-    if (activeTab === 'fleet-routes') return <Fleet activeTab="fleet-routes" />;
+    if (activeTab.startsWith('fleet')) return <Fleet activeTab={activeTab} lang={lang} />;
     if (activeTab === 'adv-logistics') return <AdvancedLogistics lang={lang} warehouse={warehouses.find(w => w.id === selectedWarehouseId)} addNotification={addNotification} />;
 
     // AI Sub-tabs
@@ -160,7 +217,7 @@ export default function App() {
           { name: 'Last Mile', value: 200 },
         ]}
         colors={['#F27D26', '#3b82f6', '#10b981', '#ef4444']}
-        exportReport={(title, data) => toast.success(`Exporting ${title}...`)}
+        exportReport={exportReport}
         addNotification={addNotification}
       />
     );
@@ -196,9 +253,34 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#050505] text-white selection:bg-porteo-blue/30">
+    <div className="flex min-h-screen bg-[#050505] text-white selection:bg-porteo-blue/30 relative">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} market={market} setMarket={setMarketAndLang} lang={lang} />
       
+      {/* Notification Bell */}
+      <div className="fixed top-8 right-8 z-50 flex items-center gap-4">
+        <button 
+          onClick={() => setIsNotificationCenterOpen(true)}
+          className="relative p-3 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 transition-all group"
+        >
+          <Activity className="w-6 h-6 text-porteo-blue group-hover:scale-110 transition-transform" />
+          {notifications.filter(n => !n.read).length > 0 && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-porteo-orange text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-[#050505]">
+              {notifications.filter(n => !n.read).length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <NotificationCenter 
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
+        lang={lang}
+        notifications={notifications}
+        onDismiss={dismissNotification}
+        onClearAll={clearAllNotifications}
+        addNotification={addNotification}
+      />
+
       <main className="flex-1 p-12 overflow-y-auto">
         <AnimatePresence mode="wait">
           <motion.div
@@ -220,7 +302,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <Toaster position="top-right" theme="dark" richColors />
+      <Toaster position="top-right" theme="dark" richColors closeButton />
     </div>
   );
 }

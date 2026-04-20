@@ -9,15 +9,40 @@ export const getAIInsight = async (prompt: string, responseMimeType: string = "t
       contents: prompt,
       config: {
         systemInstruction: "You are a senior WMS and Supply Chain expert. Provide concise, actionable insights for warehouse operations, inventory optimization, and logistics. Use a professional, data-driven tone. DO NOT hallucinate alerts about temperature or security unless specifically mentioned in the data. Focus on occupancy, throughput, and inventory levels.",
-        temperature: 0.4, // Lower temperature for more consistent data-driven responses
+        temperature: 0.4,
         responseMimeType: responseMimeType as any,
         tools: useSearch ? [{ googleSearch: {} }] : undefined,
       },
     });
+
+    if (!response || !response.text) {
+      throw new Error("Empty response from AI");
+    }
+
     return response.text;
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI Insight Error:", error);
-    return responseMimeType === "application/json" ? JSON.stringify({ observations: ["Error generating AI insight."], recommendations: [] }) : "Unable to generate AI insight.";
+    
+    // Handle rate limit specifically
+    if (error.message?.includes("429") || error.message?.includes("rate limit") || error.message?.includes("Rate exceeded")) {
+      console.warn("Gemini API Rate Limit Exceeded. Returning fallback data.");
+    }
+
+    if (responseMimeType === "application/json") {
+      return JSON.stringify({ 
+        observations: ["Service temporarily unavailable. Please try again later."], 
+        recommendations: ["Check system connectivity", "Verify API quota"],
+        headlines: ["AI Service Busy"],
+        content: ["The AI service is currently experiencing high demand. Please wait a moment before requesting more insights."],
+        throughput: 0,
+        leadTime: 0,
+        accuracy: 0,
+        advice: "AI optimization is currently unavailable due to high demand.",
+        items: [],
+        alert: { title: "AI Offline", details: "Rate limit exceeded" }
+      });
+    }
+    return "AI service is currently unavailable. Please try again in a few moments.";
   }
 };
 
@@ -73,8 +98,13 @@ export const getAIAssistance = async (role: string, message: string, context?: a
 
 export const getAnalyticsInsights = async (type: string, data: any, lang: string) => {
   const prompt = `Language: ${lang}. Provide deep analytics insights for ${type} data: ${JSON.stringify(data)}. Return JSON with "observations" (array of strings) and "recommendations" (array of strings).`;
-  const result = await getAIInsight(prompt, "application/json");
-  return JSON.parse(result);
+  try {
+    const result = await getAIInsight(prompt, "application/json");
+    return JSON.parse(result);
+  } catch (e) {
+    console.error("Failed to parse AI Analytics Insights:", e);
+    return { observations: ["Error parsing AI response."], recommendations: [] };
+  }
 };
 
 export const getAIGraphCreation = async (prompt: string, lang: string = 'en') => {
@@ -86,14 +116,24 @@ export const getAIGraphCreation = async (prompt: string, lang: string = 'en') =>
   "type": string (one of: "bar", "line", "area", "scatter"),
   "dataKey": string (one of the available variables),
   "color": string (hex color code).`;
-  const result = await getAIInsight(fullPrompt, "application/json");
-  return JSON.parse(result);
+  try {
+    const result = await getAIInsight(fullPrompt, "application/json");
+    return JSON.parse(result);
+  } catch (e) {
+    console.error("Failed to parse AI Graph Creation:", e);
+    return { title: "Error", type: "bar", dataKey: "revenue", color: "#F27D26" };
+  }
 };
 
 export const getCFOConsultation = async (data: any, query: string, lang: string) => {
   const prompt = `Language: ${lang}. Provide CFO-level analysis for query "${query}" based on data: ${JSON.stringify(data)}. Return JSON with "observations" and "recommendations".`;
-  const result = await getAIInsight(prompt, "application/json");
-  return JSON.parse(result);
+  try {
+    const result = await getAIInsight(prompt, "application/json");
+    return JSON.parse(result);
+  } catch (e) {
+    console.error("Failed to parse CFO Consultation:", e);
+    return { observations: ["Error parsing AI response."], recommendations: [] };
+  }
 };
 
 export const getStrategicSimulation = async (market: string, lang: string) => {
@@ -104,8 +144,13 @@ export const getStrategicSimulation = async (market: string, lang: string) => {
   "leadTime": number (minutes reduction, e.g. 10),
   "accuracy": number (percentage, e.g. 99.8),
   "advice": string (concise AI optimization advice).`;
-  const result = await getAIInsight(prompt, "application/json");
-  return JSON.parse(result);
+  try {
+    const result = await getAIInsight(prompt, "application/json");
+    return JSON.parse(result);
+  } catch (e) {
+    console.error("Failed to parse Strategic Simulation:", e);
+    return { throughput: 0, leadTime: 0, accuracy: 0, advice: "Simulation failed." };
+  }
 };
 
 export const getComplianceAuditReport = async (market: string, lang: string) => {
@@ -115,8 +160,13 @@ export const getComplianceAuditReport = async (market: string, lang: string) => 
   "auditId": string (e.g. AUD-2026-XXXX),
   "items": array of objects with "label", "status" (Passed/Warning/Failed), "score" (percentage string), "required" (boolean),
   "alert": object with "title" and "details".`;
-  const result = await getAIInsight(prompt, "application/json");
-  return JSON.parse(result);
+  try {
+    const result = await getAIInsight(prompt, "application/json");
+    return JSON.parse(result);
+  } catch (e) {
+    console.error("Failed to parse Compliance Audit Report:", e);
+    return { auditId: "ERR-000", items: [], alert: { title: "Error", details: "Audit failed." } };
+  }
 };
 
 export const getStrategicInsight = async (data: any, lang: string) => {

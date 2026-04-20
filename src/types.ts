@@ -85,7 +85,11 @@ export interface TPLProcess {
   status: 'collection' | 'in-transit-to-wh' | 'unloading' | 'classifying' | 'storage' | 'picking' | 'cross-dock' | 'loading' | 'delivery' | 'customer-facility' | 'returning' | 'documentation';
   steps: TPLStep[];
   documents?: string[];
+  realtimeStatus: string;
+  priority: 'low' | 'medium' | 'high';
 }
+
+export type Shipment = TPLProcess;
 
 export interface WMSNotification {
   id: string;

@@ -220,7 +220,24 @@ export const MOCK_TPL_PROCESSES_USA: TPLProcess[] = [
     steps: [
       { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'completed', timestamp: '08:00 AM' },
       { id: 's2', label: { en: 'In Transit', es: 'En Tránsito' }, status: 'in-progress', timestamp: '10:30 AM' }
-    ]
+    ],
+    realtimeStatus: 'On schedule',
+    priority: 'medium'
+  },
+  {
+    id: 'TPL-USA-102',
+    customer: 'TruckMasters US',
+    truckId: 'TRK-USA-881',
+    truckType: 'Thorton',
+    origin: 'Chicago, IL',
+    destination: 'Laredo, TX',
+    status: 'collection',
+    appointmentTime: '16:00',
+    steps: [
+      { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'in-progress', timestamp: '11:00 AM' }
+    ],
+    realtimeStatus: 'Loading at origin',
+    priority: 'low'
   }
 ];
 
@@ -238,7 +255,27 @@ export const MOCK_TPL_PROCESSES_MEXICO: TPLProcess[] = [
       { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'completed', timestamp: 'Yesterday' },
       { id: 's2', label: { en: 'Arrival', es: 'Llegada' }, status: 'completed', timestamp: '09:00 AM' },
       { id: 's3', label: { en: 'Unloading', es: 'Descarga' }, status: 'in-progress', timestamp: '10:45 AM' }
-    ]
+    ],
+    realtimeStatus: 'Active unloading',
+    priority: 'high'
+  },
+  {
+    id: 'TPL-MEX-202',
+    customer: 'Lubricantes del Norte',
+    truckId: 'TRK-MEX-445',
+    truckType: 'Full Truck',
+    origin: 'Guadalajara, MX',
+    destination: 'Monterrey, NL',
+    status: 'classifying',
+    appointmentTime: '09:30',
+    steps: [
+      { id: 's1', label: { en: 'Collection', es: 'Recolección' }, status: 'completed', timestamp: '2 days ago' },
+      { id: 's2', label: { en: 'Arrival', es: 'Llegada' }, status: 'completed', timestamp: '08:00 AM' },
+      { id: 's3', label: { en: 'Unloading', es: 'Descarga' }, status: 'completed', timestamp: '09:00 AM' },
+      { id: 's4', label: { en: 'Classification', es: 'Clasificación' }, status: 'in-progress', timestamp: '09:30 AM' }
+    ],
+    realtimeStatus: 'Sorting by SKU',
+    priority: 'medium'
   }
 ];
 

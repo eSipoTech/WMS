@@ -49,6 +49,7 @@ export const ThreePLWorkflow = ({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>('all');
   const [filterTruckType, setFilterTruckType] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'split' | 'grid'>('split');
   const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string>>(new Set());
   const [showImportModal, setShowImportModal] = useState(false);
@@ -63,6 +64,8 @@ export const ThreePLWorkflow = ({
     customer: '',
     truckId: '',
     appointmentTime: '',
+    priority: 'medium',
+    realtimeStatus: 'Pending update',
     date: new Date().toISOString().split('T')[0]
   });
 
@@ -112,6 +115,8 @@ export const ThreePLWorkflow = ({
       status: newShipment.status as any,
       appointmentTime: newShipment.appointmentTime,
       date: newShipment.date,
+      priority: newShipment.priority as any || 'medium',
+      realtimeStatus: newShipment.realtimeStatus || (language === 'en' ? 'Just created' : 'Recién creado'),
       steps: [
         { id: 's1', label: { en: 'Created', es: 'Creado' }, status: 'completed', timestamp: new Date().toLocaleTimeString() },
         { id: 's2', label: workflowSteps.find(s => s.id === newShipment.status)?.label || { en: 'Pending', es: 'Pendiente' }, status: 'in-progress', timestamp: new Date().toLocaleTimeString() }
@@ -178,15 +183,16 @@ export const ThreePLWorkflow = ({
       const matchesStatus = filterStatus === 'all' || p.status === filterStatus;
       const matchesCustomer = filterCustomer === 'all' || p.customer === filterCustomer;
       const matchesTruckType = filterTruckType === 'all' || p.truckType === filterTruckType;
+      const matchesPriority = filterPriority === 'all' || p.priority === filterPriority;
       
       const inboundSteps = ['collection', 'in-transit-to-wh', 'unloading', 'classifying', 'storage'];
       const matchesCategory = activeCategory === 'all' || 
         (activeCategory === 'inbound' && inboundSteps.includes(p.status)) ||
         (activeCategory === 'outbound' && !inboundSteps.includes(p.status));
 
-      return matchesSearch && matchesStatus && matchesCustomer && matchesTruckType && matchesCategory;
+      return matchesSearch && matchesStatus && matchesCustomer && matchesTruckType && matchesCategory && matchesPriority;
     });
-  }, [shipments, searchQuery, filterStatus, filterCustomer, filterTruckType, activeCategory]);
+  }, [shipments, searchQuery, filterStatus, filterCustomer, filterTruckType, activeCategory, filterPriority]);
 
   const customers = useMemo(() => Array.from(new Set(shipments.map(s => s.customer))), [shipments]);
   const truckTypes = useMemo(() => Array.from(new Set(shipments.map(s => s.truckType))), [shipments]);
@@ -401,6 +407,16 @@ export const ThreePLWorkflow = ({
                   <option value="all">{language === 'en' ? 'All Customers' : 'Todos los Clientes'}</option>
                   {customers.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <select 
+                  value={filterPriority}
+                  onChange={(e) => setFilterPriority(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white/60 focus:outline-none focus:border-porteo-orange/50"
+                >
+                  <option value="all">{language === 'en' ? 'All Priority' : 'Todas las Prioridades'}</option>
+                  <option value="high">{language === 'en' ? 'High' : 'Alta'}</option>
+                  <option value="medium">{language === 'en' ? 'Medium' : 'Media'}</option>
+                  <option value="low">{language === 'en' ? 'Low' : 'Baja'}</option>
+                </select>
               </div>
             </div>
           </div>
@@ -421,6 +437,7 @@ export const ThreePLWorkflow = ({
                     <th className="px-4 py-2">{language === 'en' ? 'Shipment ID' : 'ID Envío'}</th>
                     <th className="px-4 py-2">{language === 'en' ? 'Customer' : 'Cliente'}</th>
                     <th className="px-4 py-2">{language === 'en' ? 'Truck ID' : 'ID Camión'}</th>
+                    <th className="px-4 py-2">{language === 'en' ? 'Priority' : 'Prioridad'}</th>
                     <th className="px-4 py-2">{language === 'en' ? 'Type' : 'Tipo'}</th>
                     <th className="px-4 py-2">{language === 'en' ? 'Route' : 'Ruta'}</th>
                     <th className="px-4 py-2">{language === 'en' ? 'Status' : 'Estatus'}</th>
@@ -459,15 +476,27 @@ export const ThreePLWorkflow = ({
                         </button>
                       </td>
                       <td className="px-4 py-4 border-y border-white/5">
+                        <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded ${
+                          p.priority === 'high' ? 'bg-rose-500/20 text-rose-500' :
+                          p.priority === 'medium' ? 'bg-amber-500/20 text-amber-500' :
+                          'bg-blue-500/20 text-blue-500'
+                        }`}>
+                          {p.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 border-y border-white/5">
                         <span className="text-[10px] px-2 py-0.5 bg-white/10 rounded uppercase font-bold text-white/60">{p.truckType}</span>
                       </td>
                       <td className="px-4 py-4 border-y border-white/5">
                         <span className="text-[10px] text-white/40">{p.origin} → {p.destination}</span>
                       </td>
                       <td className="px-4 py-4 border-y border-white/5">
-                        <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded ${p.status === 'documentation' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
-                          {p.status}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded w-fit ${p.status === 'documentation' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
+                            {p.status}
+                          </span>
+                          <span className="text-[8px] text-white/40 italic whitespace-nowrap">{p.realtimeStatus}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-4 rounded-r-2xl border-y border-r border-white/5 text-right">
                         <button 
@@ -505,15 +534,27 @@ export const ThreePLWorkflow = ({
                     className="w-full text-left"
                   >
                     <div className="flex justify-between items-start mb-2 pr-8">
-                      <span className="text-xs font-mono text-porteo-orange font-bold">{p.truckId}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-porteo-orange font-bold">{p.truckId}</span>
+                        <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          p.priority === 'high' ? 'bg-rose-500/20 text-rose-500' :
+                          p.priority === 'medium' ? 'bg-amber-500/20 text-amber-500' :
+                          'bg-blue-500/20 text-blue-500'
+                        }`}>
+                          {p.priority}
+                        </span>
+                      </div>
                       <span className="text-[10px] px-2 py-0.5 bg-white/10 rounded uppercase font-bold text-white/60">{p.truckType}</span>
                     </div>
                     <p className="text-sm font-bold text-white truncate">{p.customer}</p>
                     <p className="text-[10px] text-white/40 mt-1">{p.origin} → {p.destination}</p>
                     <div className="mt-3 flex items-center justify-between">
-                      <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded ${p.status === 'documentation' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
-                        {p.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded w-fit ${p.status === 'documentation' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-porteo-orange/20 text-porteo-orange'}`}>
+                          {p.status}
+                        </span>
+                        <span className="text-[8px] text-white/40 italic">{p.realtimeStatus}</span>
+                      </div>
                       <span className="text-[8px] text-white/20">{p.id}</span>
                     </div>
                   </button>
@@ -542,9 +583,19 @@ export const ThreePLWorkflow = ({
                     <div className="text-right">
                       <p className="text-xs text-white/40 uppercase tracking-widest">{language === 'en' ? 'Current Status' : 'Estatus Actual'}</p>
                       <div className="flex items-center gap-2 justify-end mt-1">
-                        <span className="px-3 py-1 bg-porteo-orange/20 text-porteo-orange rounded-full text-[10px] font-bold uppercase tracking-widest">
-                          {selectedProcess.status.replace(/-/g, ' ')}
+                        <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded ${
+                          selectedProcess.priority === 'high' ? 'bg-rose-500/20 text-rose-500' :
+                          selectedProcess.priority === 'medium' ? 'bg-amber-500/20 text-amber-500' :
+                          'bg-blue-500/20 text-blue-500'
+                        }`}>
+                          {selectedProcess.priority}
                         </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="px-3 py-1 bg-porteo-orange/20 text-porteo-orange rounded-full text-[10px] font-bold uppercase tracking-widest">
+                            {selectedProcess.status.replace(/-/g, ' ')}
+                          </span>
+                          <span className="text-[10px] text-porteo-orange font-medium italic">{selectedProcess.realtimeStatus}</span>
+                        </div>
                         <span className="text-[10px] text-white/40 font-mono">
                           {language === 'en' ? 'Step' : 'Paso'} {currentStepIdx + 1} / {workflowSteps.length}
                         </span>
@@ -882,6 +933,32 @@ export const ThreePLWorkflow = ({
                     >
                       {workflowSteps.map(s => <option key={s.id} value={s.id}>{s.label[language]}</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">
+                      {language === 'en' ? 'Priority' : 'Prioridad'}
+                    </label>
+                    <select 
+                      value={newShipment.priority}
+                      onChange={(e) => setNewShipment({...newShipment, priority: e.target.value as any})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:border-porteo-orange/50 transition-all"
+                    >
+                      <option value="high">{language === 'en' ? 'High' : 'Alta'}</option>
+                      <option value="medium">{language === 'en' ? 'Medium' : 'Media'}</option>
+                      <option value="low">{language === 'en' ? 'Low' : 'Baja'}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">
+                      {language === 'en' ? 'Real-time Status' : 'Estatus en Tiempo Real'}
+                    </label>
+                    <input 
+                      type="text"
+                      value={newShipment.realtimeStatus}
+                      onChange={(e) => setNewShipment({...newShipment, realtimeStatus: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:border-porteo-orange/50 transition-all"
+                      placeholder="e.g. On schedule"
+                    />
                   </div>
                 </div>
               </div>

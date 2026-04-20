@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Text, Box, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
