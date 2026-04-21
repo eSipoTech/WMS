@@ -405,6 +405,46 @@ async function startServer() {
     });
   });
 
+  // --- ADMIN API ---
+  app.get("/api/admin/users", (req, res) => {
+    try {
+      const users = db.prepare("SELECT id, email, name, role FROM users").all();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.post("/api/admin/users", (req, res) => {
+    const { email, password, name, role } = req.body;
+    const id = Date.now().toString();
+    try {
+      db.prepare("INSERT INTO users (id, email, password, name, role) VALUES (?, ?, ?, ?, ?)").run(id, email, password, name, role);
+      res.json({ success: true, id });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", (req, res) => {
+    const { id } = req.params;
+    try {
+      db.prepare("DELETE FROM users WHERE id = ?").run(id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  app.get("/api/admin/logs", (req, res) => {
+    try {
+      const logs = db.prepare("SELECT * FROM activity ORDER BY timestamp DESC LIMIT 100").all();
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch logs" });
+    }
+  });
+
   // --- AS/400 INTEGRATION API ---
   app.get("/api/integration/as400/status", (req, res) => {
     const isConnected = Math.random() > 0.05;

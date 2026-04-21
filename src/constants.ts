@@ -283,7 +283,11 @@ export const MOCK_INVENTORY: InventoryItem[] = MOCK_INVENTORY_MEXICO;
 
 export const MOCK_PRICING: CustomerPricing[] = [
   { id: 'p-001', customerId: 'AutoCorp Global', sku: 'ENG-V8-500', basePrice: 15000, discountedPrice: 13500, contractId: 'CTR-2024-001', currency: 'USD' },
-  { id: 'p-002', customerId: 'SpeedyParts MX', sku: 'BRK-CER-02', basePrice: 450, discountedPrice: 380, contractId: 'CTR-2024-045', currency: 'MXN' }
+  { id: 'p-002', customerId: 'SpeedyParts MX', sku: 'BRK-CER-02', basePrice: 450, discountedPrice: 380, contractId: 'CTR-2024-045', currency: 'MXN' },
+  { id: 'p-003', customerId: 'TruckMasters US', sku: 'TRN-6SPD-HD', basePrice: 8500, discountedPrice: 7200, contractId: 'CTR-2024-089', currency: 'USD' },
+  { id: 'p-004', customerId: 'Lubricantes del Norte', sku: 'OIL-SYN-5W30', basePrice: 120, discountedPrice: 95, contractId: 'CTR-2024-112', currency: 'MXN' },
+  { id: 'p-005', customerId: 'FastLogistics North', sku: 'WHL-HUB-01', basePrice: 1200, discountedPrice: 1050, contractId: 'CTR-2024-022', currency: 'USD' },
+  { id: 'p-006', customerId: 'MotoZon Mexico', sku: 'IGN-PLG-IRID', basePrice: 25, discountedPrice: 18, contractId: 'CTR-2024-156', currency: 'MXN' }
 ];
 
 export const MOCK_REBATES: SupplierRebate[] = [
@@ -360,7 +364,9 @@ export const AI_AGENTS = [
   { id: 'sales-director', role: 'Sales & BD Director', icon: 'Briefcase', color: 'cyan-500' },
   { id: 'vp-legal', role: 'VP of Legal', icon: 'Scale', color: 'slate-500' },
   { id: 'sustainability-specialist', role: 'Sustainability Specialist', icon: 'Leaf', color: 'emerald-400' },
-  { id: 'automation-engineer', role: 'Automation Engineer', icon: 'Cpu', color: 'purple-500' }
+  { id: 'automation-engineer', role: 'Automation Engineer', icon: 'Cpu', color: 'purple-500' },
+  { id: 'transportation-director', role: 'Transportation Director', icon: 'Truck', color: 'blue-500' },
+  { id: 'last-mile-expert', role: 'Last Mile Expert', icon: 'MapPin', color: 'rose-400' }
 ] as const;
 
 export const MOCK_NOTIFICATIONS: WMSNotification[] = [];

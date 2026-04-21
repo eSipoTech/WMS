@@ -8,7 +8,7 @@ export const getAIInsight = async (prompt: string, responseMimeType: string = "t
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
-        systemInstruction: "You are a senior WMS and Supply Chain expert. Provide concise, actionable insights for warehouse operations, inventory optimization, and logistics. Use a professional, data-driven tone. DO NOT hallucinate alerts about temperature or security unless specifically mentioned in the data. Focus on occupancy, throughput, and inventory levels.",
+        systemInstruction: "You are an advanced Neural G-Core v5.0 AI expert focused on the Porteo Logistics ecosystem. Provide high-density, actionable insights for warehouse operations, global logistics, and supply chain strategy. Use a professional, data-driven, and highly optimized tone. Your thinking process prioritizes efficiency, cost-reduction, and neural path optimization across multi-warehouse environments. DO NOT hallucinate alerts about temperature or security unless specifically mentioned in the data. Focus on occupancy, throughput, predictive maintenance, and strategic inventory positioning.",
         temperature: 0.4,
         responseMimeType: responseMimeType as any,
         tools: useSearch ? [{ googleSearch: {} }] : undefined,
@@ -136,36 +136,38 @@ export const getCFOConsultation = async (data: any, query: string, lang: string)
   }
 };
 
-export const getStrategicSimulation = async (market: string, lang: string) => {
+export const getStrategicSimulation = async (market: string, lang: string, contextData?: any) => {
   const prompt = `Language: ${lang}. Market: ${market}. 
-  Run a strategic warehouse simulation for Peak Demand Q3 2026.
+  Context Data (Current Status): ${JSON.stringify(contextData)}
+  Run a high-fidelity strategic warehouse simulation for Peak Demand Q3 2026 based STRICTLY on the provided context data if available.
   Return a JSON object with:
   "throughput": number (percentage increase, e.g. 15),
   "leadTime": number (minutes reduction, e.g. 10),
   "accuracy": number (percentage, e.g. 99.8),
-  "advice": string (concise AI optimization advice).`;
+  "advice": string (concise AI optimization advice specifically addressing bottlenecks seen in the data).`;
   try {
     const result = await getAIInsight(prompt, "application/json");
     return JSON.parse(result);
   } catch (e) {
     console.error("Failed to parse Strategic Simulation:", e);
-    return { throughput: 0, leadTime: 0, accuracy: 0, advice: "Simulation failed." };
+    return { throughput: 0, leadTime: 0, accuracy: 0, advice: "Simulation failed due to neural sync error." };
   }
 };
 
-export const getComplianceAuditReport = async (market: string, lang: string) => {
+export const getComplianceAuditReport = async (market: string, lang: string, contextData?: any) => {
   const prompt = `Language: ${lang}. Market: ${market}. 
-  Perform a virtual compliance audit for a logistics company in 2026.
+  Operational Context: ${JSON.stringify(contextData)}
+  Perform a deep virtual compliance audit for a logistics company in 2026, evaluating the provided operational context against current regulations (SAT/Carta Porte if MX, DOT/FMCSA if USA).
   Return a JSON object with:
   "auditId": string (e.g. AUD-2026-XXXX),
   "items": array of objects with "label", "status" (Passed/Warning/Failed), "score" (percentage string), "required" (boolean),
-  "alert": object with "title" and "details".`;
+  "alert": object with "title" and "details". Ensure items reflect real regulatory requirements for the specific market.`;
   try {
     const result = await getAIInsight(prompt, "application/json");
     return JSON.parse(result);
   } catch (e) {
     console.error("Failed to parse Compliance Audit Report:", e);
-    return { auditId: "ERR-000", items: [], alert: { title: "Error", details: "Audit failed." } };
+    return { auditId: "ERR-000", items: [], alert: { title: "Audit Link Failure", details: "Could not establish secure neural link to regulatory database." } };
   }
 };
 

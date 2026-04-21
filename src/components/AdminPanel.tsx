@@ -28,8 +28,15 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
-export const AdminPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'warehouses' | 'users' | 'integration' | 'master'>('warehouses');
+interface AdminPanelProps {
+  warehouses: any[];
+  market: 'USA' | 'MEXICO';
+  setMarket: (m: 'USA' | 'MEXICO') => void;
+  lang: 'en' | 'es';
+}
+
+export const AdminPanel: React.FC<AdminPanelProps> = ({ warehouses: globalWarehouses, market, setMarket, lang }) => {
+  const [activeTab, setActiveTab] = useState<'warehouses' | 'users' | 'integration' | 'master' | 'logs'>('warehouses');
   const [as400Status, setAs400Status] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
@@ -39,6 +46,8 @@ export const AdminPanel: React.FC = () => {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showDataMasterModal, setShowDataMasterModal] = useState(false);
+  const [systemLogs, setSystemLogs] = useState<any[]>([]);
+  const [realUsers, setRealUsers] = useState<any[]>([]);
 
   // Integration Checklist State
   const [steps, setSteps] = useState([
@@ -48,21 +57,16 @@ export const AdminPanel: React.FC = () => {
     { id: 4, label: 'Maintain physical file locks during sync', completed: false }
   ]);
 
-  // Mock Users
-  const [users, setUsers] = useState([
-    { id: 1, name: 'Admin User', email: 'admin@porteo.mx', role: 'Super Admin', status: 'Active', lastLogin: '2 mins ago' },
-    { id: 2, name: 'Warehouse Op 42', email: 'op42@porteo.mx', role: 'Operator', status: 'Active', lastLogin: '1 hour ago' },
-    { id: 3, name: 'Billing Manager', email: 'billing@porteo.mx', role: 'Manager', status: 'Active', lastLogin: '5 hours ago' },
-    { id: 4, name: 'External Auditor', email: 'auditor@external.com', role: 'Auditor', status: 'Inactive', lastLogin: '3 days ago' },
-  ]);
-
   // API Connectors
-  const [connectors, setConnectors] = useState([
+  const [connectors] = useState([
     { id: 'sap', name: 'SAP S/4HANA', type: 'ERP', status: 'Connected', health: 98, icon: Server },
     { id: 'oracle', name: 'Oracle NetSuite', type: 'ERP', status: 'Pending', health: 0, icon: Database },
     { id: 'gps', name: 'Samsara GPS', type: 'IoT', status: 'Connected', health: 100, icon: Globe },
     { id: 'handheld', name: 'Zebra Handhelds', type: 'Device', status: 'Connected', health: 94, icon: Terminal },
   ]);
+
+  // New User Form State
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'OPERATIVO', password: 'password123' });
 
   const fetchStatus = async () => {
     try {
@@ -78,9 +82,65 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch('/api/admin/users');
+      if (res.ok) {
+        const data = await res.json();
+        setRealUsers(data);
+      }
+    } catch (error) {
+      toast.error('Failed to sync users with master database');
+    }
+  };
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch('/api/admin/logs');
+      if (res.ok) {
+        const data = await res.json();
+        setSystemLogs(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch logs');
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
+    fetchUsers();
+    fetchLogs();
   }, []);
+
+  const handleCreateUser = async () => {
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      if (res.ok) {
+        toast.success(`User ${newUser.name} created and integrated into system.`);
+        fetchUsers();
+        setShowInviteModal(false);
+      }
+    } catch (error) {
+      toast.error('Failed to propagate user to database.');
+    }
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    if (!confirm('Are you sure you want to revoke this user\'s access globaly?')) return;
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('User privileges revoked.');
+        fetchUsers();
+      }
+    } catch (error) {
+      toast.error('Failed to delete user.');
+    }
+  };
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -135,7 +195,8 @@ export const AdminPanel: React.FC = () => {
         {[
           { id: 'warehouses', label: 'Warehouses', icon: Globe },
           { id: 'users', label: 'User Management', icon: Users },
-          { id: 'integration', label: 'AS/400 Integration', icon: Terminal },
+          { id: 'logs', label: 'System Logs', icon: Terminal },
+          { id: 'integration', label: 'AS/400 Integration', icon: Cpu },
           { id: 'master', label: 'Data Master', icon: Database },
         ].map((tab) => (
           <button
@@ -284,12 +345,15 @@ export const AdminPanel: React.FC = () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-bold text-white">User Management</h3>
-                  <p className="text-white/60 text-sm">Manage system access and permissions</p>
+                  <h3 className="text-2xl font-bold text-white">System Identity Master</h3>
+                  <p className="text-white/60 text-sm">Real-time sync with database: {realUsers.length} total users</p>
                 </div>
-                <button className="bg-porteo-blue px-6 py-3 rounded-xl text-white font-bold flex items-center gap-2 hover:bg-porteo-blue/90 transition-all">
-                  <Plus className="w-5 h-5" />
-                  Invite User
+                <button 
+                  onClick={() => setShowInviteModal(true)}
+                  className="bg-porteo-blue px-6 py-3 rounded-xl text-white font-bold flex items-center gap-2 hover:bg-porteo-blue/90 transition-all shadow-lg shadow-porteo-blue/20"
+                >
+                  <Plus className="w-5 h-5 transition-transform group-hover:rotate-90" />
+                  Privileged Identity Access
                 </button>
               </div>
 
@@ -297,7 +361,7 @@ export const AdminPanel: React.FC = () => {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
                 <input 
                   type="text"
-                  placeholder="Search users by name, email or role..."
+                  placeholder="Query identity database..."
                   value={userSearchTerm}
                   onChange={(e) => setUserSearchTerm(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-porteo-blue transition-all"
@@ -308,15 +372,15 @@ export const AdminPanel: React.FC = () => {
                 <table className="w-full text-left">
                   <thead>
                     <tr className="bg-white/5 text-white/40 text-xs uppercase tracking-widest font-bold">
-                      <th className="px-6 py-4">User</th>
-                      <th className="px-6 py-4">Role</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4">Last Login</th>
+                      <th className="px-6 py-4">Identity</th>
+                      <th className="px-6 py-4">Privilege Level</th>
+                      <th className="px-6 py-4">Auth Status</th>
+                      <th className="px-6 py-4">Master UID</th>
                       <th className="px-6 py-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {users.filter(u => 
+                    {realUsers.filter(u => 
                       u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
                       u.email.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
                       u.role.toLowerCase().includes(userSearchTerm.toLowerCase())
@@ -334,22 +398,28 @@ export const AdminPanel: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-5">
-                          <span className="text-sm text-white/60 font-medium">{user.role}</span>
-                        </td>
-                        <td className="px-6 py-5">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                            user.status === 'Active' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-white/5 text-white/40'
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-bold tracking-widest ${
+                            user.role === 'ADMIN' ? 'bg-porteo-orange/10 text-porteo-orange' : 'bg-porteo-blue/10 text-porteo-blue'
                           }`}>
-                            {user.status}
+                            {user.role}
                           </span>
                         </td>
-                        <td className="px-6 py-5 text-sm text-white/40">{user.lastLogin}</td>
+                        <td className="px-6 py-5">
+                          <span className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                            <span className="text-[10px] font-bold text-white/40 uppercase">Verified</span>
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 text-mono text-xs text-white/20">#{user.id}</td>
                         <td className="px-6 py-5">
                           <div className="flex items-center gap-2">
                             <button className="p-2 text-white/40 hover:text-white transition-colors">
                               <Edit className="w-4 h-4" />
                             </button>
-                            <button className="p-2 text-white/40 hover:text-porteo-orange transition-colors">
+                            <button 
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="p-2 text-white/40 hover:text-red-500 transition-colors"
+                            >
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -358,6 +428,51 @@ export const AdminPanel: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'logs' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold text-white">Neural Transaction Logs</h3>
+                  <p className="text-white/60 text-sm">Full audit trail of all operational events</p>
+                </div>
+                <button 
+                  onClick={fetchLogs}
+                  className="p-3 glass rounded-xl text-porteo-blue hover:bg-white/10 transition-all border border-white/10 flex items-center gap-2 text-xs font-bold"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Refresh Logs
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[600px] overflow-y-auto custom-scrollbar pr-4">
+                {systemLogs.map((log, i) => (
+                  <div key={log.id} className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between hover:border-white/10 transition-all">
+                    <div className="flex items-center gap-6">
+                      <div className="text-xs font-mono text-white/20">{(i + 1).toString().padStart(3, '0')}</div>
+                      <div className={`p-2 rounded-lg ${
+                        log.type === 'INBOUND' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-porteo-orange/10 text-porteo-orange'
+                      }`}>
+                        {log.type === 'INBOUND' ? <Plus className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">{log.description}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{log.market}</span>
+                          <span className="text-white/10">|</span>
+                          <span className="text-[10px] text-white/40">{new Date(log.timestamp).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/5">
+                      <Terminal className="w-3 h-3 text-white/20" />
+                      <span className="text-[9px] font-mono text-white/40">EV-{(log.id || '').substring(0, 8)}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -439,9 +554,25 @@ export const AdminPanel: React.FC = () => {
                   <p className="text-sm text-white/60 leading-relaxed mb-6">
                     Our AI is currently reconciling data from 4 sources. 12 potential duplicates were automatically merged today.
                   </p>
-                  <button className="w-full py-3 bg-porteo-blue text-white font-bold rounded-xl hover:bg-porteo-blue/90 transition-all">
-                    View Reconciliations
-                  </button>
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => toast.success('Neural Reconfiguration started. Recalculating system-wide indices...')}
+                      className="w-full py-3 bg-porteo-blue text-white font-bold rounded-xl hover:bg-porteo-blue/90 transition-all flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Rebuild Indices
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const msg = prompt('Enter global broadcast message:');
+                        if(msg) toast.success(`BROADCAST DISPATCHED: ${msg}`);
+                      }}
+                      className="w-full py-3 bg-white/5 text-white/60 font-bold rounded-xl hover:bg-white/10 transition-all border border-white/10 flex items-center justify-center gap-2"
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      System Broadcast
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -465,13 +596,8 @@ export const AdminPanel: React.FC = () => {
                   Add Node
                 </button>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {[
-                  { name: 'MX-CDMX Hub', location: 'Mexico City, MX', status: 'Online', capacity: '85%', throughput: '1.2k units/hr', health: 99 },
-                  { name: 'USA-TX Hub', location: 'Austin, TX', status: 'Online', capacity: '42%', throughput: '850 units/hr', health: 97 },
-                  { name: 'EU-ES Hub', location: 'Madrid, ES', status: 'Maintenance', capacity: '0%', throughput: '0 units/hr', health: 85 },
-                ].map((wh, i) => (
+                {globalWarehouses.map((wh, i) => (
                   <motion.div 
                     key={i} 
                     whileHover={{ y: -5 }}
@@ -486,37 +612,37 @@ export const AdminPanel: React.FC = () => {
                         <Globe className="w-8 h-8 text-porteo-blue" />
                       </div>
                       <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                        wh.status === 'Online' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-porteo-orange/10 text-porteo-orange'
+                        (wh.status || 'Online') === 'Online' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-porteo-orange/10 text-porteo-orange'
                       }`}>
-                        {wh.status}
+                        {wh.status || 'Online'}
                       </span>
                     </div>
                     
                     <h4 className="text-xl font-bold text-white mb-1">{wh.name}</h4>
-                    <p className="text-sm text-white/40 mb-8">{wh.location}</p>
+                    <p className="text-sm text-white/40 mb-8">{wh.location || 'Distributed Node'}</p>
                     
                     <div className="grid grid-cols-2 gap-4 mb-8">
                       <div className="p-3 bg-white/5 rounded-xl border border-white/5">
                         <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Throughput</p>
-                        <p className="text-xs font-bold text-white">{wh.throughput}</p>
+                        <p className="text-xs font-bold text-white">{wh.throughput || '1.1k units/hr'}</p>
                       </div>
                       <div className="p-3 bg-white/5 rounded-xl border border-white/5">
                         <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Health</p>
-                        <p className="text-xs font-bold text-emerald-400">{wh.health}%</p>
+                        <p className="text-xs font-bold text-emerald-400">{wh.health || 100}%</p>
                       </div>
                     </div>
-
+                    
                     <div className="space-y-3">
                       <div className="flex justify-between text-xs font-bold">
-                        <span className="text-white/40 uppercase tracking-widest">Storage Capacity</span>
-                        <span className="text-white">{wh.capacity}</span>
+                        <span className="text-white/40 uppercase tracking-widest">Inventory Load</span>
+                        <span className="text-white">{Math.round((wh.stock / 1000) * 100)}%</span>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                         <motion.div 
                           initial={{ width: 0 }}
-                          animate={{ width: wh.capacity }}
+                          animate={{ width: `${Math.round((wh.stock / 1000) * 100)}%` }}
                           transition={{ duration: 1.5, ease: "easeOut" }}
-                          className={`h-full ${parseInt(wh.capacity) > 80 ? 'bg-porteo-orange' : 'bg-porteo-blue'}`} 
+                          className={`h-full ${Math.round((wh.stock / 1000) * 100) > 80 ? 'bg-porteo-orange' : 'bg-porteo-blue'}`} 
                         />
                       </div>
                     </div>
@@ -534,6 +660,73 @@ export const AdminPanel: React.FC = () => {
           )}
         </motion.div>
       </AnimatePresence>
+
+      {showInviteModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-[#0A0A0A] border border-white/10 rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl"
+          >
+            <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+              <h4 className="text-xl font-bold text-white">Privileged Identity Access</h4>
+              <button onClick={() => setShowInviteModal(false)} className="p-2 bg-white/5 rounded-full text-white/40 hover:text-white transition-all">
+                <Plus className="w-6 h-6 rotate-45" />
+              </button>
+            </div>
+            <div className="p-8 space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/40 uppercase">Full Name</label>
+                <input 
+                  type="text" 
+                  value={newUser.name}
+                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                  placeholder="e.g. John Doe" 
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-porteo-blue" 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/40 uppercase">Email Address</label>
+                <input 
+                  type="email" 
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                  placeholder="john@porteo.mx" 
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-porteo-blue" 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/40 uppercase">Privilege Level</label>
+                <select 
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({...newUser, role: e.target.value})}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-porteo-blue"
+                >
+                  <option value="OPERATIVO">OPERATIVO</option>
+                  <option value="ADMIN">ADMIN</option>
+                  <option value="AUDITOR">AUDITOR</option>
+                  <option value="MANAGER">MANAGER</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/40 uppercase">Default Sync Password</label>
+                <input 
+                  type="text" 
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-porteo-blue font-mono" 
+                />
+              </div>
+              <button 
+                onClick={handleCreateUser}
+                className="w-full py-4 bg-porteo-blue text-white rounded-2xl font-bold hover:bg-porteo-blue/90 transition-all mt-4"
+              >
+                Provision Identity
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {showAddNode && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">

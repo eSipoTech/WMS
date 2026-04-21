@@ -32,10 +32,11 @@ interface WarehouseOperationsProps {
   lang: 'en' | 'es';
   market: 'USA' | 'MEXICO';
   inventoryItems: InventoryItem[];
+  setInventoryItems: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
   addNotification: (message: string, type: 'market' | 'operational' | 'alert' | 'success' | 'info') => void;
 }
 
-export const WarehouseOperations = ({ lang, market, inventoryItems, addNotification }: WarehouseOperationsProps) => {
+export const WarehouseOperations = ({ lang, market, inventoryItems, setInventoryItems, addNotification }: WarehouseOperationsProps) => {
   const [activeSubTab, setActiveSubTab] = useState<'receiving' | 'picking' | 'packing' | 'counts' | 'omnichannel'>('receiving');
   
   const language = lang; // Alias for backward compatibility
@@ -47,6 +48,7 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [receivingStep, setReceivingStep] = useState(1);
   const [showLabel, setShowLabel] = useState(false);
+  const [pickedItems, setPickedItems] = useState<Set<string>>(new Set());
 
   // Derive some dynamic tasks from inventory if it exists
   const dynamicTasks = useMemo(() => {
@@ -1271,6 +1273,15 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
                       <button 
                         onClick={() => {
                           addNotification(language === 'en' ? 'Slotting changes applied' : 'Cambios de slotting aplicados', 'success');
+                          
+                          // Actually update some inventory items to reflect the slotting change
+                          setInventoryItems(prev => prev.map((item, idx) => {
+                            if (idx < 3) { // Update first 3 items as a simulation
+                              return { ...item, location: `ALT-${item.location}` };
+                            }
+                            return item;
+                          }));
+                          
                           setActiveModal(null);
                           setAiInsight(null);
                         }}
@@ -1314,36 +1325,48 @@ export const WarehouseOperations = ({ lang, market, inventoryItems, addNotificat
 
                     <div className="space-y-3">
                       <p className="text-xs font-bold text-white/40 uppercase tracking-widest">SKU List</p>
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className="p-4 bg-white/5 border border-white/10 rounded-xl flex justify-between items-center group">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold">
-                              {i}
+                      {[1, 2, 3].map(i => {
+                        const skuId = `${selectedTask.id}-sku-${i}`;
+                        const isPicked = pickedItems.has(skuId);
+                        return (
+                          <div key={i} className={`p-4 bg-white/5 border rounded-xl flex justify-between items-center group transition-all ${isPicked ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/10'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded flex items-center justify-center text-[10px] font-bold transition-all ${isPicked ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'}`}>
+                                {isPicked ? <CheckCircle2 className="w-4 h-4" /> : i}
+                              </div>
+                              <div>
+                                <p className={`text-sm font-bold transition-all ${isPicked ? 'text-white/40 line-through' : 'text-white'}`}>SKU-00{i}-X</p>
+                                <p className="text-[10px] text-white/40">Bin: A-0{i}-12</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-bold text-white">SKU-00{i}-X</p>
-                              <p className="text-[10px] text-white/40">Bin: A-0{i}-12</p>
+                            <div className="flex items-center gap-4">
+                              <span className={`text-sm font-bold transition-all ${isPicked ? 'text-white/20' : 'text-white'}`}>x{Math.floor(Math.random() * 5) + 1}</span>
+                              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => {
+                                    setPickedItems(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(skuId)) next.delete(skuId);
+                                      else next.add(skuId);
+                                      return next;
+                                    });
+                                    addNotification?.(language === 'en' ? `SKU-00${i}-X status updated.` : `Estatus de SKU-00${i}-X actualizado.`, isPicked ? 'info' : 'success');
+                                  }}
+                                  className={`p-2 rounded-lg transition-colors ${isPicked ? 'bg-white/10 text-white/40' : 'bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30'}`}
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </button>
+                                <button 
+                                  onClick={() => addNotification?.(language === 'en' ? `Discrepancy flagged for SKU-00${i}-X.` : `Discrepancia marcada para SKU-00${i}-X.`, 'alert')}
+                                  className="p-2 bg-rose-500/20 text-rose-500 rounded-lg hover:bg-rose-500/30 transition-colors"
+                                >
+                                  <AlertCircle className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-sm font-bold text-white">x{Math.floor(Math.random() * 5) + 1}</span>
-                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                onClick={() => addNotification?.(language === 'en' ? `SKU-00${i}-X verified.` : `SKU-00${i}-X verificado.`, 'success')}
-                                className="p-2 bg-emerald-500/20 text-emerald-500 rounded-lg hover:bg-emerald-500/30 transition-colors"
-                              >
-                                <CheckCircle2 className="w-4 h-4" />
-                              </button>
-                              <button 
-                                onClick={() => addNotification?.(language === 'en' ? `Discrepancy flagged for SKU-00${i}-X.` : `Discrepancia marcada para SKU-00${i}-X.`, 'alert')}
-                                className="p-2 bg-rose-500/20 text-rose-500 rounded-lg hover:bg-rose-500/30 transition-colors"
-                              >
-                                <AlertCircle className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <div className="flex gap-4 pt-4">

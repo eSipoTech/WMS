@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DollarSign, FileText, TrendingUp, Users, Search, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck, Calendar, AlertCircle, ExternalLink, Plus, Upload, X, RefreshCw } from 'lucide-react';
+import { DollarSign, FileText, TrendingUp, Users, Search, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck, Calendar, AlertCircle, ExternalLink, Plus, Upload, X, RefreshCw, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { MOCK_PRICING, MOCK_REBATES, MOCK_CONTRACTS } from '../constants';
 import { Contract } from '../types';
@@ -168,7 +168,7 @@ export const CommercialManagement = ({
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
                 <h3 className="text-xl font-bold text-white">{language === 'en' ? 'Customer Specific Pricing' : 'Precios Específicos por Cliente'}</h3>
-                <div className="flex gap-4 w-full sm:w-auto">
+                <div className="flex flex-wrap gap-4 w-full sm:w-auto">
                   <div className="relative flex-1 sm:flex-none">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
                     <input 
@@ -176,18 +176,27 @@ export const CommercialManagement = ({
                       value={pricingSearch}
                       onChange={(e) => setPricingSearch(e.target.value)}
                       placeholder={language === 'en' ? 'Search customer or SKU...' : 'Buscar cliente o SKU...'}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white outline-none focus:border-porteo-orange/50 transition-all"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white outline-none focus:border-porteo-orange/50 transition-all focus:ring-1 focus:ring-porteo-orange/20"
                     />
                   </div>
                   <select 
                     value={pricingFilter}
                     onChange={(e) => setPricingFilter(e.target.value as any)}
-                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-porteo-orange/50 transition-all cursor-pointer"
+                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-porteo-orange/50 transition-all cursor-pointer hover:bg-white/10"
                   >
                     <option value="all">{language === 'en' ? 'All Savings' : 'Todos los Ahorros'}</option>
                     <option value="high-savings">{language === 'en' ? 'High Savings (>15%)' : 'Ahorro Alto (>15%)'}</option>
                     <option value="low-savings">{language === 'en' ? 'Low Savings (<15%)' : 'Ahorro Bajo (<15%)'}</option>
                   </select>
+                  <button 
+                    onClick={() => {
+                      toast.info(language === 'en' ? 'Opening Pricing Configuration Wizard...' : 'Abriendo asistente de configuración de precios...');
+                    }}
+                    className="px-4 py-2.5 bg-porteo-orange text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-porteo-orange/90 transition-all shadow-lg shadow-porteo-orange/20"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {language === 'en' ? 'New Pricing Rule' : 'Nueva Regla de Precios'}
+                  </button>
                 </div>
               </div>
 
@@ -207,24 +216,51 @@ export const CommercialManagement = ({
                     {filteredPricing.map((p, i) => (
                       <tr 
                         key={i} 
-                        className="hover:bg-white/5 transition-colors group"
+                        onClick={() => handleViewPricing(p)}
+                        className="hover:bg-white/5 transition-all group cursor-pointer border-l-2 border-transparent hover:border-porteo-orange"
                       >
-                        <td className="py-4 px-6 text-sm font-bold text-white">{p.customerId}</td>
-                        <td className="py-4 px-6 text-sm text-white/60">{p.sku}</td>
+                        <td className="py-4 px-6">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-white group-hover:text-porteo-orange transition-colors">{p.customerId}</span>
+                            <span className="text-[10px] text-white/20 uppercase font-bold tracking-tighter">Identity Verified</span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-sm text-white/60 font-mono">{p.sku}</td>
                         <td className="py-4 px-6 text-sm text-white/40 line-through">{currency} ${p.basePrice.toLocaleString()}</td>
                         <td className="py-4 px-6 text-sm font-bold text-porteo-orange">{currency} ${p.discountedPrice.toLocaleString()}</td>
                         <td className="py-4 px-6">
-                          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-bold">
-                            -{((1 - p.discountedPrice/p.basePrice) * 100).toFixed(0)}%
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-bold">
+                              -{((1 - p.discountedPrice/p.basePrice) * 100).toFixed(0)}%
+                            </span>
+                            {((1 - p.discountedPrice/p.basePrice) * 100) > 15 && (
+                              <TrendingUp className="w-3 h-3 text-emerald-500" />
+                            )}
+                          </div>
                         </td>
                         <td className="py-4 px-6 text-right">
-                          <button 
-                            onClick={() => handleViewPricing(p)}
-                            className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white hover:bg-porteo-orange/20 transition-all"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewPricing(p);
+                              }}
+                              className="p-2 bg-white/5 rounded-lg text-white/40 group-hover:text-white group-hover:bg-porteo-orange/20 transition-all border border-white/5"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsEditingPricing(true);
+                                setSelectedPricing(p);
+                                setShowPricingModal(true);
+                              }}
+                              className="p-2 bg-white/5 rounded-lg text-white/40 group-hover:text-porteo-blue group-hover:bg-porteo-blue/20 transition-all border border-white/5"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

@@ -178,6 +178,7 @@ export default function App() {
         inventoryItems={inventoryItems}
         setInventoryItems={setInventoryItems}
         patioSlots={patioSlots}
+        setPatioSlots={setPatioSlots}
         addNotification={addNotification}
         warehouses={warehouses}
         selectedWarehouseId={selectedWarehouseId}
@@ -197,18 +198,27 @@ export default function App() {
     // AI Sub-tabs
     if (activeTab === 'ai-platform') return <AI lang={lang} />;
     if (activeTab === 'intel-agents') return <IntelligenceAgents lang={lang} />;
-    if (activeTab === 'strategic-res') return <StrategicResearch lang={lang} market={market} setActiveTab={setActiveTab} addNotification={addNotification} />;
+    if (activeTab === 'strategic-res') return (
+      <StrategicResearch 
+        lang={lang} 
+        market={market} 
+        setActiveTab={setActiveTab} 
+        addNotification={addNotification}
+        inventoryItems={inventoryItems}
+        warehouses={warehouses}
+      />
+    );
 
     if (activeTab === 'analytics') return (
       <Analytics 
         lang={lang} 
         financialData={[
-          { name: 'Jan', revenue: 4000, cost: 2400, profit: 1600, pallets: 12000, occupancy: 80, trucks: 20, temp: 18 },
-          { name: 'Feb', revenue: 3000, cost: 1398, profit: 1602, pallets: 12500, occupancy: 82, trucks: 22, temp: 18 },
-          { name: 'Mar', revenue: 2000, cost: 9800, profit: -7800, pallets: 13000, occupancy: 85, trucks: 25, temp: 19 },
-          { name: 'Apr', revenue: 2780, cost: 3908, profit: -1128, pallets: 12800, occupancy: 84, trucks: 24, temp: 18 },
-          { name: 'May', revenue: 1890, cost: 4800, profit: -2910, pallets: 12400, occupancy: 83, trucks: 23, temp: 18 },
-          { name: 'Jun', revenue: 2390, cost: 3800, profit: -1410, pallets: 12600, occupancy: 84, trucks: 24, temp: 18 },
+          { name: 'Jan', revenue: 4000, cost: 2400, profit: 1600, pallets: 12000, occupancy: 80, trucks: 20, temp: 18, accuracy: 98, lines: 250 },
+          { name: 'Feb', revenue: 3000, cost: 1398, profit: 1602, pallets: 12500, occupancy: 82, trucks: 22, temp: 18, accuracy: 97, lines: 265 },
+          { name: 'Mar', revenue: 2000, cost: 9800, profit: -7800, pallets: 13000, occupancy: 85, trucks: 25, temp: 19, accuracy: 99, lines: 280 },
+          { name: 'Apr', revenue: 2780, cost: 3908, profit: -1128, pallets: 12800, occupancy: 84, trucks: 24, temp: 18, accuracy: 98.5, lines: 275 },
+          { name: 'May', revenue: 1890, cost: 4800, profit: -2910, pallets: 12400, occupancy: 83, trucks: 23, temp: 18, accuracy: 99.2, lines: 290 },
+          { name: 'Jun', revenue: 2390, cost: 3800, profit: -1410, pallets: 12600, occupancy: 84, trucks: 24, temp: 18, accuracy: 98.8, lines: 285 },
         ]}
         pieData={[
           { name: 'Labor', value: 400 },
@@ -247,7 +257,7 @@ export default function App() {
         />
       );
       case 'chat': return <Chat />;
-      case 'admin': return <AdminPanel />;
+      case 'admin': return <AdminPanel warehouses={warehouses} market={market} setMarket={setMarket} lang={lang} />;
       default: return <Dashboard />;
     }
   };

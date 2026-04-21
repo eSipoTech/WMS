@@ -48,6 +48,7 @@ interface WMSProps {
   inventoryItems: InventoryItem[];
   setInventoryItems: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
   patioSlots: PatioSlot[];
+  setPatioSlots: React.Dispatch<React.SetStateAction<PatioSlot[]>>;
   addNotification: (message: string, type?: 'market' | 'operational' | 'alert' | 'success' | 'info') => void;
   warehouses: Warehouse[];
   selectedWarehouseId: string;
@@ -61,6 +62,7 @@ export const WMS: React.FC<WMSProps> = ({
   inventoryItems, 
   setInventoryItems,
   patioSlots,
+  setPatioSlots,
   addNotification,
   warehouses,
   selectedWarehouseId,
@@ -666,6 +668,7 @@ export const WMS: React.FC<WMSProps> = ({
               lang={lang} 
               market={market} 
               inventoryItems={inventoryItems} 
+              setInventoryItems={setInventoryItems}
               addNotification={addNotification} 
             />
           )}
@@ -674,6 +677,21 @@ export const WMS: React.FC<WMSProps> = ({
             <PatioManagement 
               lang={lang} 
               patioSlots={patioSlots} 
+              onSlotClick={(slot) => {
+                toast.info(`Slot ${slot.label} selected`, {
+                  description: `Status: ${slot.status} | Type: ${slot.type}`
+                });
+              }}
+              onAddSlot={(type) => {
+                const newSlot: PatioSlot = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  label: `${type === 'parking' ? 'P' : type === 'dock' ? 'D' : 'S'}-${patioSlots.filter(s => s.type === type).length + 1}`,
+                  status: 'empty',
+                  type: type
+                };
+                setPatioSlots(prev => [...prev, newSlot]);
+                addNotification(lang === 'es' ? `Nuevo espacio de ${type} agregado` : `New ${type} slot added`, 'success');
+              }}
             />
           )}
 
@@ -713,6 +731,20 @@ export const WMS: React.FC<WMSProps> = ({
               <Warehouse3D 
                 lang={lang} 
                 onViewDetails={(details) => setSelectedRackDetails(details)}
+                onRelocateItems={(rackId) => {
+                  toast.success(lang === 'es' ? `Iniciando reubicación para Rack ${rackId}` : `Initiating relocation for Rack ${rackId}`);
+                  // Simulate relocation by updating locations of items in that rack
+                  setInventoryItems(prev => prev.map(item => {
+                    if (item.location.startsWith(rackId)) {
+                      const newLoc = `NEW-${item.location}`;
+                      return { ...item, location: newLoc };
+                    }
+                    return item;
+                  }));
+                }}
+                onAuditRack={(rackId) => {
+                  toast.info(lang === 'es' ? `Auditoría programada para Rack ${rackId}` : `Audit scheduled for Rack ${rackId}`);
+                }}
                 addNotification={(msg, type) => {
                   if (type === 'success') toast.success(msg);
                   else if (type === 'alert') toast.error(msg);

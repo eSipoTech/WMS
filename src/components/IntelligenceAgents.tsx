@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Send, Terminal, Cpu, TrendingUp, ShieldAlert, Warehouse, DollarSign, Search, MessageSquare, Briefcase, Scale, Leaf } from 'lucide-react';
+import { Bot, Send, Terminal, Cpu, TrendingUp, ShieldAlert, Warehouse, DollarSign, Search, MessageSquare, Briefcase, Scale, Leaf, Truck, MapPin } from 'lucide-react';
 import { getAIAssistance } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import { AI_AGENTS } from '../constants';
@@ -60,6 +60,8 @@ export const IntelligenceAgents = ({ lang }: IntelligenceAgentsProps) => {
       case 'Briefcase': return <Briefcase className={className} />;
       case 'Scale': return <Scale className={className} />;
       case 'Leaf': return <Leaf className={className} />;
+      case 'Truck': return <Truck className={className} />;
+      case 'MapPin': return <MapPin className={className} />;
       default: return <Bot className={className} />;
     }
   };
@@ -118,7 +120,7 @@ export const IntelligenceAgents = ({ lang }: IntelligenceAgentsProps) => {
             </div>
             <div>
               <h3 className="text-xl font-bold text-white">{selectedAgent.role}</h3>
-              <p className="text-white/40 text-xs uppercase tracking-widest">Active Session • Porteo AI v4.0</p>
+              <p className="text-white/40 text-xs uppercase tracking-widest">Active Session • Porteo Neural G-Core v5.0</p>
             </div>
           </div>
           <div className="flex gap-2">

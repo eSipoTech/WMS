@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 import { 
   Truck, 
   ParkingCircle, 
@@ -30,6 +31,7 @@ interface PatioManagementProps {
 
 export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQuery = '', trucks = [], patioSlots, onSlotClick, onAddSlot }) => {
   const [selectedStatus, setSelectedStatus] = useState<'empty' | 'occupied' | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<PatioSlot | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [modalSearch, setModalSearch] = useState('');
   const [modalTypeFilter, setModalTypeFilter] = useState<'all' | 'parking' | 'dock' | 'staging'>('all');
@@ -109,7 +111,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
               <motion.div
                 key={slot.id}
                 whileHover={{ scale: 1.1, y: -5 }}
-                onClick={() => onSlotClick?.(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSlot(slot);
+                  onSlotClick?.(slot);
+                }}
                 className={`w-16 h-20 rounded-t-xl border-x border-t flex flex-col items-center justify-center cursor-pointer transition-all ${getStatusColor(slot.status)}`}
               >
                 <span className="text-[10px] font-bold mb-1">{slot.label}</span>
@@ -124,7 +130,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
               <motion.div
                 key={slot.id}
                 whileHover={{ scale: 1.05 }}
-                onClick={() => onSlotClick?.(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSlot(slot);
+                  onSlotClick?.(slot);
+                }}
                 className={`aspect-[3/4] rounded-lg border flex flex-col items-center justify-center cursor-pointer transition-all ${getStatusColor(slot.status)}`}
               >
                 <span className="text-[8px] font-bold mb-1">{slot.label}</span>
@@ -139,7 +149,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
               <motion.div
                 key={slot.id}
                 whileHover={{ scale: 1.05, y: 5 }}
-                onClick={() => onSlotClick?.(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSlot(slot);
+                  onSlotClick?.(slot);
+                }}
                 className={`w-32 h-16 rounded-xl border flex items-center justify-center gap-3 cursor-pointer transition-all ${getStatusColor(slot.status)}`}
               >
                 <MapPin className="w-4 h-4 opacity-40" />
@@ -231,7 +245,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
               <motion.div 
                 key={slot.id}
                 whileHover={{ scale: 1.02, y: -2 }}
-                onClick={() => onSlotClick?.(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSlot(slot);
+                  onSlotClick?.(slot);
+                }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${getStatusColor(slot.status)}`}
               >
                 <div className="flex justify-between items-start mb-4 relative z-10">
@@ -269,7 +287,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
               <motion.div 
                 key={slot.id}
                 whileHover={{ x: 4 }}
-                onClick={() => onSlotClick?.(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSlot(slot);
+                  onSlotClick?.(slot);
+                }}
                 className={`p-6 rounded-2xl border flex items-center justify-between transition-all cursor-pointer relative overflow-hidden ${getStatusColor(slot.status)}`}
               >
                 <div className="flex items-center gap-4 relative z-10">
@@ -316,7 +338,11 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
               <motion.div 
                 key={slot.id}
                 whileHover={{ scale: 1.01 }}
-                onClick={() => onSlotClick?.(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSlot(slot);
+                  onSlotClick?.(slot);
+                }}
                 className={`p-6 rounded-2xl border flex flex-col gap-4 transition-all cursor-pointer relative overflow-hidden ${getStatusColor(slot.status)}`}
               >
                 <div className="flex justify-between items-center relative z-10">
@@ -434,6 +460,7 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
                           setSelectedStatus(null);
                           setModalSearch('');
                           setModalTypeFilter('all');
+                          setSelectedSlot(slot);
                           onSlotClick?.(slot);
                         }}
                         className="group p-5 rounded-2xl bg-white/5 border border-white/5 hover:border-white/20 hover:bg-white/10 transition-all cursor-pointer flex flex-col gap-4"
@@ -497,6 +524,120 @@ export const PatioManagement: React.FC<PatioManagementProps> = ({ lang, searchQu
                   className="px-8 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition-all border border-white/10"
                 >
                   {t.close}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Slot Actions Modal */}
+      <AnimatePresence>
+        {selectedSlot && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[400] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-slate-900 border border-white/10 rounded-[32px] w-full max-w-lg overflow-hidden shadow-2xl"
+            >
+              <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border border-white/10 ${getStatusColor(selectedSlot.status)}`}>
+                    <span className="font-mono font-bold text-lg">{selectedSlot.label}</span>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white uppercase tracking-tighter">
+                      {t[selectedSlot.type as keyof typeof t] || selectedSlot.type}
+                    </h3>
+                    <p className="text-xs text-white/40 font-mono italic">{selectedSlot.id}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedSlot(null)} className="p-2 text-white/40 hover:text-white transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-8">
+                <div className="space-y-4">
+                  <p className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">{lang === 'en' ? 'Current Status' : 'Estatus Actual'}</p>
+                  <div className={`p-4 rounded-2xl border flex items-center justify-between ${getStatusColor(selectedSlot.status)}`}>
+                    <span className="font-bold text-sm uppercase tracking-widest">{selectedSlot.status}</span>
+                    {selectedSlot.status === 'occupied' ? <Truck className="w-5 h-5" /> : <div className="w-2 h-2 rounded-full bg-emerald-500" />}
+                  </div>
+                </div>
+
+                {selectedSlot.status === 'occupied' && (
+                  <div className="bg-white/5 rounded-2xl p-6 border border-white/10 space-y-4">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-white/40 uppercase tracking-widest font-bold">Assigned Truck</span>
+                      <span className="text-porteo-orange font-mono font-bold">{selectedSlot.truckId}</span>
+                    </div>
+                    <div className="h-px bg-white/10 w-full" />
+                    <button 
+                      onClick={() => {
+                        toast.success(lang === 'es' ? 'Salida de camión procesada' : 'Truck departure processed');
+                        setSelectedSlot(null);
+                      }}
+                      className="w-full py-4 bg-rose-500/20 text-rose-500 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-rose-500/30 transition-all border border-rose-500/10"
+                    >
+                      <Activity className="w-5 h-5" />
+                      {lang === 'en' ? 'Release & Complete' : 'Liberar y Completar'}
+                    </button>
+                  </div>
+                )}
+
+                {selectedSlot.status === 'empty' && (
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">{lang === 'en' ? 'Quick Actions' : 'Acciones Rápidas'}</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button 
+                        onClick={() => {
+                          toast.success(lang === 'es' ? 'Camión asignado' : 'Truck assigned');
+                          setSelectedSlot(null);
+                        }}
+                        className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center space-y-3 hover:bg-white/10 transition-all group"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-porteo-orange/10 flex items-center justify-center text-porteo-orange mx-auto group-hover:scale-110 transition-transform">
+                          <Truck className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs font-bold text-white">{lang === 'en' ? 'Assign Truck' : 'Asignar Camión'}</p>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          toast.info(lang === 'es' ? 'Cajón reservado' : 'Slot reserved');
+                          setSelectedSlot(null);
+                        }}
+                        className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center space-y-3 hover:bg-white/10 transition-all group"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-porteo-blue/10 flex items-center justify-center text-porteo-blue mx-auto group-hover:scale-110 transition-transform">
+                          <CheckCircle2 className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs font-bold text-white">{lang === 'en' ? 'Reserve Slot' : 'Reservar Espacio'}</p>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-8 border-t border-white/10 bg-white/5 flex gap-4">
+                <button 
+                  onClick={() => setSelectedSlot(null)}
+                  className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white/60 rounded-2xl font-bold transition-all border border-white/10"
+                >
+                  {t.close}
+                </button>
+                <button 
+                  onClick={() => {
+                    toast.info(lang === 'es' ? 'Abriendo telemetría avanzada...' : 'Opening advanced telemetry...');
+                  }}
+                  className="px-6 py-4 bg-porteo-orange text-white rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-porteo-orange/20 hover:bg-porteo-orange/90 transition-all"
+                >
+                  <MapPin className="w-5 h-5" />
                 </button>
               </div>
             </motion.div>

@@ -28,9 +28,18 @@ interface StrategicResearchProps {
   market: 'USA' | 'MEXICO';
   setActiveTab: (tab: string) => void;
   addNotification: (message: string, type?: 'operational' | 'alert' | 'success' | 'info') => void;
+  inventoryItems: any[];
+  warehouses: any[];
 }
 
-export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, market, setActiveTab, addNotification }) => {
+export const StrategicResearch: React.FC<StrategicResearchProps> = ({ 
+  lang, 
+  market, 
+  setActiveTab, 
+  addNotification,
+  inventoryItems,
+  warehouses
+}) => {
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [complianceStatus, setComplianceStatus] = useState<'validating' | 'ready' | 'idle'>('idle');
@@ -109,8 +118,11 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
       : 'Ejecuta escenarios "Qué pasaría si" para tus líneas de ensamble y diseño de almacén usando ML para predecir cuellos de botella.'
   };
 
+  const [efficiency, setEfficiency] = useState(65);
+
   const generateStrategicInsight = async () => {
     setIsLoadingInsight(true);
+    addNotification(lang === 'en' ? 'Processing neural logistics data...' : 'Procesando datos logísticos neuronales...', 'operational');
     try {
       const region = market === 'USA' ? 'USA' : 'Mexico';
       const complianceTerm = market === 'USA' ? 'DOT/FMCSA' : 'CFDI 4.0';
@@ -143,8 +155,13 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
       } else {
         setAiInsight(insight || '');
       }
+      
+      // Update efficiency score reactively
+      setEfficiency(prev => Math.min(95, prev + Math.floor(Math.random() * 5) + 2));
+      addNotification(lang === 'en' ? 'Strategy generated and projected.' : 'Estrategia generada y proyectada.', 'success');
     } catch (error) {
       console.error(error);
+      addNotification(lang === 'en' ? 'AI core connection timeout.' : 'Tiempo de espera de conexión del núcleo IA.', 'alert');
     } finally {
       setIsLoadingInsight(false);
     }
@@ -152,11 +169,13 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
 
   const validateCompliance = async () => {
     setComplianceStatus('validating');
+    addNotification(lang === 'en' ? 'Scanning neural CFDI/DOT records...' : 'Escaneando registros neuronales CFDI/DOT...', 'operational');
     try {
       // Simulate a deep check
       await new Promise(resolve => setTimeout(resolve, 2000));
       setComplianceStatus('ready');
       setShowComplianceCert(true);
+      addNotification(lang === 'en' ? 'System fully compliant for 2026.' : 'Sistema en cumplimiento total para 2026.', 'success');
     } catch (error) {
       console.error(error);
       setComplianceStatus('idle');
@@ -166,7 +185,13 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
   const startSimulation = async () => {
     setIsSimulating(true);
     try {
-      const data = await getStrategicSimulation(market, lang);
+      const context = {
+        inventoryCount: inventoryItems.length,
+        totalStock: inventoryItems.reduce((acc, curr) => acc + curr.quantity, 0),
+        warehouses: warehouses.length,
+        currentEfficiency: efficiency
+      };
+      const data = await getStrategicSimulation(market, lang, context);
       setSimulationData(data);
       setSimCounter(prev => prev + 1);
       setShowSimResult(true);
@@ -181,7 +206,12 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
   const runAudit = async () => {
     setIsAuditing(true);
     try {
-      const data = await getComplianceAuditReport(market, lang);
+      const context = {
+        itemCategories: Array.from(new Set(inventoryItems.map(i => i.category))),
+        totalCustomers: Array.from(new Set(inventoryItems.map(i => i.customer))).length,
+        market: market
+      };
+      const data = await getComplianceAuditReport(market, lang, context);
       setAuditData(data);
       setShowAuditResult(true);
     } catch (error) {
@@ -223,7 +253,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
             </span>
           </button>
           <button 
-            onClick={() => setActiveTab('tpl')}
+            onClick={() => setActiveTab('tpl-billing')}
             className="px-4 py-2 bg-porteo-orange/10 border border-porteo-orange/20 rounded-xl flex items-center gap-2 hover:border-porteo-orange/50 transition-all group"
           >
             <Truck className="w-4 h-4 text-porteo-orange group-hover:scale-110 transition-transform" />
@@ -261,7 +291,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
                 <>
                   {/* Tool 1: Inventory Quick Access */}
                   <button 
-                    onClick={() => setActiveTab('inventory')}
+                    onClick={() => setActiveTab('wms-inventory')}
                     className="p-8 bg-white/5 rounded-[32px] border border-white/10 hover:border-porteo-orange/30 transition-all text-left group"
                   >
                     <div className="w-12 h-12 bg-porteo-orange/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
@@ -281,7 +311,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
 
                   {/* Tool 2: Assembly Line Manager */}
                   <button 
-                    onClick={() => setActiveTab('assembly')}
+                    onClick={() => setActiveTab('wms-assembly')}
                     className="p-8 bg-white/5 rounded-[32px] border border-white/10 hover:border-porteo-orange/30 transition-all text-left group"
                   >
                     <div className="w-12 h-12 bg-porteo-blue/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
@@ -301,7 +331,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
 
                   {/* Tool 3: Patio & Yard Control */}
                   <button 
-                    onClick={() => setActiveTab('patio')}
+                    onClick={() => setActiveTab('wms-patio')}
                     className="p-8 bg-white/5 rounded-[32px] border border-white/10 hover:border-porteo-orange/30 transition-all text-left group"
                   >
                     <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
@@ -321,7 +351,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
 
                   {/* Tool 4: 3PL Workflow & Carta Porte */}
                   <button 
-                    onClick={() => setActiveTab('tpl')}
+                    onClick={() => setActiveTab('tpl-billing')}
                     className="p-8 bg-white/5 rounded-[32px] border border-white/10 hover:border-porteo-orange/30 transition-all text-left group"
                   >
                     <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
@@ -397,13 +427,13 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
             <div className="space-y-6">
               <div className="p-6 bg-white/5 rounded-3xl border border-white/10">
                 <div className="flex justify-between items-center mb-4">
-                  <span className="text-xs text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Current Efficiency' : 'Eficiencia Actual'}</span>
-                  <span className="text-sm font-bold text-emerald-500">+12.4%</span>
+                  <span className="text-xs text-white/40 uppercase font-bold tracking-widest">{lang === 'en' ? 'Projected Efficiency' : 'Eficiencia Proyectada'}</span>
+                  <span className="text-sm font-bold text-emerald-500">+{efficiency}%</span>
                 </div>
                 <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: '65%' }}
+                    animate={{ width: `${efficiency}%` }}
                     className="bg-emerald-500 h-full" 
                   />
                 </div>
@@ -440,10 +470,16 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
           </div>
 
           <div className="glass p-8 rounded-[40px] border border-white/10">
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-3">
-              <Activity className="w-5 h-5 text-porteo-orange" />
-              {lang === 'en' ? 'Market Pulse' : 'Pulso del Mercado'}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-3">
+                <Activity className="w-5 h-5 text-porteo-orange" />
+                {lang === 'en' ? 'Market Pulse' : 'Pulso del Mercado'}
+              </h3>
+              <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">{lang === 'en' ? 'Live' : 'Vivo'}</span>
+              </div>
+            </div>
             <div className="space-y-4">
               {[
                 { label: lang === 'en' ? 'Onshoring Demand' : 'Demanda de Nearshoring', key: 'nearshoring', color: 'text-emerald-500' },
@@ -550,15 +586,15 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
               <div className="grid grid-cols-3 gap-4 mb-8">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
                   <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Throughput</p>
-                  <p className="text-lg font-bold text-emerald-500">+{simulationData?.throughput || (15 + (simCounter % 5))}%</p>
+                  <p className="text-lg font-bold text-emerald-500">+{simulationData?.throughput || 0}%</p>
                 </div>
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
                   <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Lead Time</p>
-                  <p className="text-lg font-bold text-emerald-500">-{simulationData?.leadTime || (10 + (simCounter % 3))}m</p>
+                  <p className="text-lg font-bold text-emerald-500">-{simulationData?.leadTime || 0}m</p>
                 </div>
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-center">
                   <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Accuracy</p>
-                  <p className="text-lg font-bold text-porteo-blue">{simulationData?.accuracy || (99.7 + (simCounter % 3) / 10)}%</p>
+                  <p className="text-lg font-bold text-porteo-blue">{simulationData?.accuracy || 0}%</p>
                 </div>
               </div>
 
@@ -569,9 +605,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
                     AI Optimization Advice
                   </h4>
                   <p className="text-xs text-white/60 leading-relaxed">
-                    {simulationData?.advice || (lang === 'en' 
-                      ? 'Machine Learning models suggest reconfiguring Assembly Line 4 to handle increased kitting volume. Predicted bottleneck at Dock 7 can be mitigated by shifting 15% of inbound traffic to Dock 12.' 
-                      : 'Los modelos de Machine Learning sugieren reconfigurar la Línea de Ensamble 4 para manejar el aumento del volumen de kitting. El cuello de botella predicho en el Muelle 7 puede mitigarse desplazando el 15% del tráfico entrante al Muelle 12.')}
+                    {simulationData?.advice || (lang === 'en' ? 'Processing neural optimization paths...' : 'Procesando rutas de optimización neuronales...')}
                   </p>
                 </div>
               </div>
@@ -620,12 +654,7 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
               </div>
 
               <div className="space-y-4 mb-8">
-                {(auditData?.items || [
-                  { label: lang === 'en' ? 'DOT Documentation' : 'Documentación SAT', status: 'Passed', score: '100%', required: true },
-                  { label: lang === 'en' ? 'Bill of Lading Integrity' : 'Integridad de Carta Porte', status: 'Passed', score: '100%', required: true },
-                  { label: lang === 'en' ? 'FMCSA Safety Sync' : 'Sincronización de Seguridad', status: 'Warning', score: '85%', required: false },
-                  { label: lang === 'en' ? 'Tax Compliance' : 'Cumplimiento Fiscal', status: 'Passed', score: '100%', required: true }
-                ]).map((item: any, idx: number) => (
+                {(auditData?.items || []).map((item: any, idx: number) => (
                   <div key={idx} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
                     <span className="text-sm text-white/80">{item.label}</span>
                     <div className="flex items-center gap-4">
@@ -641,12 +670,10 @@ export const StrategicResearch: React.FC<StrategicResearchProps> = ({ lang, mark
               <div className="p-4 bg-porteo-orange/10 border border-porteo-orange/20 rounded-2xl mb-8">
                 <p className="text-xs text-porteo-orange font-bold flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
-                  {auditData?.alert?.title || (lang === 'en' ? 'Incomplete Platform Data' : 'Datos de Plataforma Incompletos')}
+                  {auditData?.alert?.title || (lang === 'en' ? 'Scanning Regulatory Datasets' : 'Escaneando Conjuntos de Datos Regulatorios')}
                 </p>
                 <p className="text-[10px] text-porteo-orange/60 mt-1">
-                  {auditData?.alert?.details || (lang === 'en' 
-                    ? 'Audit detected missing ELD logs for 3 shipments. Please upload required documents to achieve 100% compliance.' 
-                    : 'La auditoría detectó registros ELD faltantes para 3 envíos. Por favor, cargue los documentos requeridos para lograr el 100% de cumplimiento.')}
+                  {auditData?.alert?.details || (lang === 'en' ? 'Establishing secure neural link to SAT/DOT compliance nodes...' : 'Estableciendo enlace neural seguro con nodos de cumplimiento SAT/DOT...')}
                 </p>
               </div>
 

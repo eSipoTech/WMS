@@ -54,7 +54,11 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set) => ({
-  messages: [],
+  messages: [
+    { id: '1', content: 'New shipment arrived at Dock 4. Please prioritize unloading.', senderName: 'Operations Lead', createdAt: new Date(Date.now() - 3600000).toISOString() },
+    { id: '2', content: 'On it. Team assigned to Dock 4. ETA for completion: 45mins.', senderName: 'Warehouse Staff', createdAt: new Date(Date.now() - 3000000).toISOString() },
+    { id: '3', content: 'System audit complete for morning shift. All protocols green.', senderName: 'Security Ops', createdAt: new Date(Date.now() - 1500000).toISOString() },
+  ],
   addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
   setMessages: (messages) => set({ messages }),
 }));

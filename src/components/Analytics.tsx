@@ -23,7 +23,10 @@ import {
   Users,
   Sparkles,
   Calendar,
-  Filter
+  Filter,
+  FileText,
+  MessageSquare,
+  RefreshCw
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -44,6 +47,7 @@ import {
   ScatterChart,
   Scatter
 } from 'recharts';
+import { toast } from 'sonner';
 import { getAnalyticsInsights, getAIGraphCreation } from '../services/geminiService';
 
 interface AnalyticsProps {
@@ -81,8 +85,13 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
     productivity: { type: 'area' }
   });
   const [customCharts, setCustomCharts] = useState<CustomChart[]>([]);
+  const [localPieData, setLocalPieData] = useState(pieData);
   const [isAddingChart, setIsAddingChart] = useState(false);
   const [isAICreating, setIsAICreating] = useState(false);
+  const [selectedSubDetail, setSelectedSubDetail] = useState<{title: string, data: any[]} | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportData, setExportData] = useState<{title: string, data: any} | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [dateRange, setDateRange] = useState({ start: '2026-01-01', end: '2026-12-31' });
   const [newChartForm, setNewChartForm] = useState<Partial<CustomChart>>({
@@ -95,13 +104,13 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
     { id: 'occupancy', label: lang === 'en' ? 'Occupancy' : 'Ocupación', value: statsOverride?.occupancy || '84%', trend: '+2%', icon: <Layers />, color: 'porteo-blue' },
     { id: 'trucks', label: lang === 'en' ? 'Active Trucks' : 'Camiones Activos', value: statsOverride?.trucks || '24', trend: '-5%', icon: <Truck />, color: 'porteo-blue-light' },
     { id: 'temp', label: lang === 'en' ? 'Avg Temp' : 'Temp Promedio', value: statsOverride?.temp || '18°C', trend: 'Stable', icon: <Thermometer />, color: 'emerald-500' },
-  ];  // Fetch AI Insights when drillDownStat or drillDownView changes
+  ];  // Fetch AI Insights when data or drill-down context changes
   React.useEffect(() => {
     if (drillDownStat) {
       setIsLoadingInsights(true);
       const metricData = getDrillDownData(drillDownStat);
 
-      getAnalyticsInsights(drillDownStat, { ...metricData, view: drillDownView }, lang)
+      getAnalyticsInsights(drillDownStat, { ...metricData, view: drillDownView, localPieData, financialData }, lang)
         .then(insights => {
           setAiInsights(insights);
           setIsLoadingInsights(false);
@@ -111,18 +120,18 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
           setIsLoadingInsights(false);
           setAiInsights({
             observations: [
-              lang === 'en' ? "Data analysis suggests a stable trend with minor fluctuations." : "El análisis de datos sugiere una tendencia estable con fluctuaciones menores.",
-              lang === 'en' ? "Peak performance observed during mid-week shifts." : "Rendimiento máximo observado durante los turnos de mitad de semana.",
-              lang === 'en' ? "Operational costs correlate with volume increases." : "Los costos operativos se correlacionan con los aumentos de volumen."
+              lang === 'en' ? "Real-time analysis suggests a stable performance envelope." : "El análisis en tiempo real sugiere un envolvente de rendimiento estable.",
+              lang === 'en' ? "Anomalies detected in labor allocation vs throughput." : "Anomalías detectadas en la asignación de mano de obra frente al rendimiento.",
+              lang === 'en' ? "Optimization potential identified in storage density." : "Potencial de optimización identificado en la densidad de almacenamiento."
             ],
             recommendations: [
-              lang === 'en' ? "Review resource allocation for upcoming peak periods." : "Revisar la asignación de recursos para los próximos períodos pico.",
-              lang === 'en' ? "Implement automated reporting for real-time monitoring." : "Implementar informes automatizados para el monitoreo en tiempo real."
+              lang === 'en' ? "Run AI simulation for peak hour labor balancing." : "Ejecutar simulación de IA para el equilibrio laboral en horas pico.",
+              lang === 'en' ? "Deploy automated storage reallocation strategy." : "Implementar estrategia automatizada de reasignación de almacenamiento."
             ]
           });
         });
     }
-  }, [drillDownStat, drillDownView, lang]);
+  }, [drillDownStat, drillDownView, lang, localPieData, financialData]);
 
   const getDrillDownTitle = (id: string) => {
     const mapping: Record<string, string> = {
@@ -149,9 +158,50 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
     });
   }, [financialData, dateRange]);
 
+  const getCurrentValue = (id: string) => {
+    // Check main dashboard stats first
+    const mainStat = stats.find(s => s.id === id);
+    if (mainStat) return mainStat.value;
+    
+    // Handle special mappings or defaults
+    if (id === 'space') return stats.find(s => s.id === 'occupancy')?.value || '84%';
+    
+    // Get from latest financial data point
+    const latest = filteredFinancialData[filteredFinancialData.length - 1];
+    if (latest) {
+      if (id === 'financial') return `$${(latest.revenue / 1000).toFixed(1)}k`;
+      if (id === 'fulfillment') return `${latest.accuracy}%`;
+      if (id === 'productivity') return `${latest.lines} L/h`;
+      if ((latest as any)[id] !== undefined) {
+        const val = (latest as any)[id];
+        return typeof val === 'number' ? val.toLocaleString() : val;
+      }
+    }
+    
+    return '0';
+  };
+
+  const getMetricSummary = (id: string, type: 'current' | 'average' | 'peak') => {
+    const data = getDrillDownData(id).data;
+    if (!data || data.length === 0) return '0';
+
+    const values = data.map((d: any) => d.value).filter((v: any) => typeof v === 'number');
+    if (values.length === 0) return getCurrentValue(id);
+
+    if (type === 'average') {
+      const avg = values.reduce((a: number, b: number) => a + b, 0) / values.length;
+      return id.includes('accuracy') || id === 'fulfillment' ? `${avg.toFixed(1)}%` : Math.round(avg).toLocaleString();
+    }
+    if (type === 'peak') {
+      const max = Math.max(...values);
+      return id.includes('accuracy') || id === 'fulfillment' ? `${max.toFixed(1)}%` : Math.round(max).toLocaleString();
+    }
+    return getCurrentValue(id);
+  };
+
   const getDrillDownData = (id: string) => {
     if (id === 'financial') return { data: filteredFinancialData, keys: ['revenue', 'cost', 'profit'], colors: ['#F27D26', '#004A99', '#10b981'] };
-    if (id === 'space' || id === 'occupancy') return { data: pieData, keys: ['value'], colors: ['#F27D26'] };
+    if (id === 'space' || id === 'occupancy') return { data: localPieData, keys: ['value'], colors: colors };
     
     // Generate more granular data for drill down (daily for the last 30 days)
     const generateDailyData = (baseValue: number, variance: number, unit: string = '') => {
@@ -260,6 +310,24 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
     }
   };
 
+  const triggerExport = (title: string, data: any) => {
+    setExportData({ title, data });
+    setShowExportModal(true);
+  };
+
+  const executeExport = (type: 'pdf' | 'csv' | 'email') => {
+    setIsExporting(true);
+    setTimeout(() => {
+      if (type === 'email') {
+        toast.success(lang === 'en' ? 'Report sent to your executive email.' : 'Reporte enviado a su correo ejecutivo.');
+      } else {
+        exportReport(exportData?.title || 'Report', exportData?.data);
+      }
+      setIsExporting(false);
+      setShowExportModal(false);
+    }, 2000);
+  };
+
   const renderChart = (type: string, data: any[], dataKeys: string[], colors: string[]) => {
     const ChartComponent = (type === 'bar' ? BarChart : type === 'line' ? RechartsLineChart : type === 'scatter' ? ScatterChart : AreaChart) as any;
     const DataComponent = (type === 'bar' ? Bar : type === 'line' ? Line : type === 'scatter' ? Scatter : Area) as any;
@@ -334,7 +402,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
             {lang === 'en' ? 'Add Custom Graph' : 'Agregar Gráfica'}
           </button>
           <button 
-            onClick={() => exportReport(lang === 'en' ? 'Full Analytics Report' : 'Reporte Analítico Completo', { financial: financialData, custom: customCharts })}
+            onClick={() => triggerExport(lang === 'en' ? 'Full Analytics Report' : 'Reporte Analítico Completo', { financial: financialData, custom: customCharts })}
             className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors flex items-center gap-2"
           >
             <Download className="w-4 h-4" />
@@ -513,7 +581,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={pieData}
+                  data={localPieData}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -521,7 +589,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {pieData.map((entry, index) => (
+                  {localPieData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                   ))}
                 </Pie>
@@ -533,7 +601,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
             </ResponsiveContainer>
           </div>
           <div className="mt-6 space-y-3 flex-1">
-            {pieData.map((item, i) => (
+            {localPieData.map((item, i) => (
               <div key={i} className="flex justify-between items-center group cursor-pointer" onClick={() => setDrillDownStat('space')}>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[i % colors.length] }} />
@@ -551,7 +619,11 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
               const msg = lang === 'en' ? 'Running Slotting Optimization Algorithm...' : 'Ejecutando Algoritmo de Optimización de Slotting...';
               addNotification(msg, 'info');
               setTimeout(() => {
-                addNotification(lang === 'en' ? 'Optimization Complete. 34 movements recommended.' : 'Optimización Completa. 34 movimientos recomendados.', 'success');
+                setLocalPieData(prev => prev.map(item => ({
+                  ...item,
+                  value: item.name === 'Storage' ? item.value * 0.9 : item.name === 'Labor' ? item.value * 0.85 : item.value * 1.05
+                })));
+                addNotification(lang === 'en' ? 'Optimization Complete. 34 movements recommended. Efficiency increased by 14%.' : 'Optimización Completa. 34 movimientos recomendados. Eficiencia aumentada en 14%.', 'success');
               }, 2000);
             }}
             className="w-full mt-6 py-3 bg-porteo-orange/10 border border-porteo-orange/20 rounded-xl text-xs font-bold text-porteo-orange hover:bg-porteo-orange hover:text-white transition-all shadow-lg shadow-porteo-orange/5"
@@ -622,9 +694,11 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
               >
                 <X className="w-4 h-4" />
               </button>
-              <h3 className="text-lg font-bold text-white mb-6">{chart.title}</h3>
-              <div className="h-64 w-full">
-                {renderChart(chart.type, filteredFinancialData, [chart.dataKey], [chart.color])}
+              <h3 className="text-lg font-bold text-white mb-6 uppercase tracking-tight">{chart.title}</h3>
+              <div className="h-64 w-full cursor-pointer" onClick={() => {
+                setDrillDownStat(chart.dataKey);
+              }}>
+                {renderChart(chart.type, filteredFinancialData, [chart.dataKey.toLowerCase()], [chart.color])}
               </div>
             </div>
           ))}
@@ -669,7 +743,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                   </select>
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => exportReport(getDrillDownTitle(drillDownStat), getDrillDownData(drillDownStat).data)}
+                      onClick={() => triggerExport(getDrillDownTitle(drillDownStat), getDrillDownData(drillDownStat).data)}
                       className="p-3 bg-white/5 border border-white/10 rounded-2xl text-white/40 hover:text-white transition-colors"
                     >
                       <Download className="w-5 h-5" />
@@ -692,7 +766,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                   >
                     <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Current Value' : 'Valor Actual'}</p>
                     <p className="text-3xl font-bold text-white">
-                      {drillDownStat === 'space' ? (stats.find(s => s.id === 'occupancy')?.value) : (stats.find(s => s.id === drillDownStat)?.value || 'N/A')}
+                      {getCurrentValue(drillDownStat)}
                     </p>
                     <div className="mt-2 flex items-center gap-1 text-emerald-500 text-xs font-bold">
                       <TrendingUp className="w-3 h-3" />
@@ -705,7 +779,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                   >
                     <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Average (30d)' : 'Promedio (30d)'}</p>
                     <p className="text-3xl font-bold text-white">
-                      {drillDownStat === 'pallets' ? '11,840' : drillDownStat === 'occupancy' || drillDownStat === 'space' ? '82%' : 'Calculated'}
+                      {getMetricSummary(drillDownStat, 'average')}
                     </p>
                     <p className="text-[10px] text-white/20 mt-2">{lang === 'en' ? 'Stable performance' : 'Rendimiento estable'}</p>
                   </div>
@@ -715,9 +789,9 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                   >
                     <p className="text-[10px] text-white/40 uppercase font-bold mb-1">{lang === 'en' ? 'Peak Value' : 'Valor Pico'}</p>
                     <p className="text-3xl font-bold text-porteo-orange">
-                      {drillDownStat === 'pallets' ? '14,200' : drillDownStat === 'occupancy' || drillDownStat === 'space' ? '96%' : 'Peak'}
+                      {getMetricSummary(drillDownStat, 'peak')}
                     </p>
-                    <p className="text-[10px] text-white/20 mt-2">{lang === 'en' ? 'Recorded on March 15' : 'Registrado el 15 de marzo'}</p>
+                    <p className="text-[10px] text-white/20 mt-2">{lang === 'en' ? 'Historical session high' : 'Máximo histórico de la sesión'}</p>
                   </div>
                 </div>
 
@@ -731,7 +805,23 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                     </div>
                   )}
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={getDrillDownData(drillDownStat).data}>
+                    <AreaChart 
+                      data={getDrillDownData(drillDownStat).data}
+                      onClick={(data: any) => {
+                        if (data && data.activePayload) {
+                          const payload = data.activePayload[0].payload;
+                          setSelectedSubDetail({
+                            title: `${getDrillDownTitle(drillDownStat)} - ${payload.name}`,
+                            data: [
+                              { label: lang === 'en' ? 'Value' : 'Valor', value: payload.value },
+                              { label: lang === 'en' ? 'Average' : 'Promedio', value: payload.average },
+                              { label: lang === 'en' ? 'Peak' : 'Pico', value: payload.peak },
+                              { label: lang === 'en' ? 'Unit' : 'Unidad', value: payload.unit || 'units' }
+                            ]
+                          });
+                        }
+                      }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" />
                       <XAxis dataKey="name" stroke="#ffffff20" />
                       <YAxis stroke="#ffffff20" />
@@ -917,6 +1007,147 @@ export const Analytics: React.FC<AnalyticsProps> = ({ lang, financialData, pieDa
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Level 3 Granularity Modal */}
+      <AnimatePresence>
+        {selectedSubDetail && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedSubDetail(null)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-2xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="relative w-full max-w-lg bg-slate-900 border border-white/10 rounded-[40px] p-8 shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="text-xl font-bold text-white uppercase tracking-tight">{selectedSubDetail.title}</h3>
+                <button onClick={() => setSelectedSubDetail(null)} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
+                  <X className="w-6 h-6 text-white" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {selectedSubDetail.data.map((item, i) => (
+                  <div key={i} className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <span className="text-white/40 uppercase text-[10px] font-bold tracking-widest">{item.label}</span>
+                    <span className="text-white font-bold">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 p-6 bg-porteo-orange/10 rounded-3xl border border-porteo-orange/20">
+                <div className="flex gap-3 items-start">
+                  <Sparkles className="w-5 h-5 text-porteo-orange shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-bold text-white mb-1">{lang === 'en' ? 'AI Micro-Recommendation' : 'Micro-Recomendación IA'}</h4>
+                    <p className="text-xs text-white/60 leading-relaxed">
+                      {lang === 'en' 
+                        ? "Deep analysis of this data point reveals a potential 5% overhead reduction if shift duration is adjusted by 30 minutes." 
+                        : "El análisis profundo de este punto de datos revela una reducción potencial del 5% en los gastos generales si la duración del turno se ajusta en 30 minutos."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => {
+                  addNotification(lang === 'en' ? 'Executing micro-optimization...' : 'Ejecutando micro-optimización...', 'success');
+                  setSelectedSubDetail(null);
+                }}
+                className="w-full mt-8 py-4 bg-porteo-orange text-white rounded-2xl font-bold hover:bg-porteo-orange/90 transition-all flex items-center justify-center gap-2"
+              >
+                <Zap className="w-4 h-4" />
+                {lang === 'en' ? 'Apply Optimization' : 'Aplicar Optimización'}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Analytics Export Modal */}
+      <AnimatePresence>
+        {showExportModal && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowExportModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-[40px] p-10 shadow-2xl overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-porteo-orange/40" />
+              
+              <div className="mb-8">
+                <h3 className="text-2xl font-bold text-white uppercase tracking-tight">{lang === 'en' ? 'Analytics Export' : 'Exportación de Analítica'}</h3>
+                <p className="text-white/40 text-sm mt-2">{lang === 'en' ? 'Select format for: ' : 'Seleccione formato para: '}<span className="text-porteo-orange font-bold font-mono">{exportData?.title}</span></p>
+              </div>
+
+              <div className="space-y-4">
+                <button 
+                  onClick={() => executeExport('pdf')}
+                  disabled={isExporting}
+                  className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 hover:border-porteo-orange/40 transition-all group flex items-start gap-4 text-left"
+                >
+                  <div className="p-3 bg-red-400/20 rounded-2xl text-red-400 group-hover:scale-110 transition-transform">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold">{lang === 'en' ? 'High-Res PDF' : 'PDF de Alta Res'}</h4>
+                    <p className="text-xs text-white/40">{lang === 'en' ? 'Perfect for presentations and summaries' : 'Perfecto para presentaciones y resúmenes'}</p>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => executeExport('csv')}
+                  disabled={isExporting}
+                  className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 hover:border-porteo-orange/40 transition-all group flex items-start gap-4 text-left"
+                >
+                  <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-500 group-hover:scale-110 transition-transform">
+                    <PieChartIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold">{lang === 'en' ? 'Raw CSV Ledger' : 'Libro Mayor CSV'}</h4>
+                    <p className="text-xs text-white/40">{lang === 'en' ? 'Direct data for Excel or BI tools' : 'Datos directos para Excel o herramientas de BI'}</p>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => executeExport('email')}
+                  disabled={isExporting}
+                  className="w-full p-6 bg-porteo-blue/10 border border-porteo-blue/20 rounded-3xl hover:bg-porteo-blue/20 hover:border-porteo-blue/40 transition-all group flex items-start gap-4 text-left"
+                >
+                  <div className="p-3 bg-porteo-blue/20 rounded-2xl text-porteo-blue group-hover:scale-110 transition-transform">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold">{lang === 'en' ? 'Secure Email' : 'Correo Seguro'}</h4>
+                    <p className="text-xs text-white/40">{lang === 'en' ? 'Encrypted delivery to pilotplus@porteo.mx' : 'Entrega encriptada a pilotplus@porteo.mx'}</p>
+                  </div>
+                </button>
+              </div>
+
+              {isExporting && (
+                <div className="mt-8 flex items-center justify-center gap-3 text-porteo-orange animate-pulse">
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <span className="text-xs font-bold uppercase tracking-widest">{lang === 'en' ? 'Generating Forensic Report...' : 'Generando Reporte Forense...'}</span>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
